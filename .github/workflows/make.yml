@@ -3,9 +3,12 @@ name: Tạo TrollStore cho macOS
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
-    name: Xây dựng TrollStore Tieng Viet
+    name: Xây dựng TrollStore Tiếng Việt
     runs-on: macos-latest
 
     steps:
@@ -24,8 +27,10 @@ jobs:
           rm -rf ~/theos/sdks-tmp
 
       - name: 3. Tai ma nguon TrollStore tu Release v2.0
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          curl -L -o source.zip "https://github.com/Jailbreak-roothide/T4MJBRoothide/releases/download/v2.0/TrollStore-2.1.1vn.zip"
+          gh release download v2.0 -p "TrollStore-2.1.1vn.zip" -R Jailbreak-roothide/T4MJBRoothide -O source.zip
           unzip source.zip
           SRC_DIR=$(find . -maxdepth 3 -name "Makefile" -exec dirname {} \; | head -n 1)
           echo "SRC_DIR=$SRC_DIR" >> $GITHUB_ENV
