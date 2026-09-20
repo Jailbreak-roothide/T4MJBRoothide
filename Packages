@@ -18,3 +18,16 @@ Description: Plugin tối ưu CPU và ổn định FPS của Rain điều khiể
 Tag: role::hacker, purpose::extension
 Name: RainMHz CPU Tiếng Việt
 
+Package: com.reprovision.again
+Name: ReProvision Reborn
+Version: 0.8.4-rootless.28
+Architecture: iphoneos-arm64e
+Maintainer: ReProvision
+Installed-Size: 28000
+Pre-Depends: rootless-compat (>= 0.9)
+Depends: mobilesubstrate, preferenceloader, firmware (>= 14.0)
+Section: System
+Filename: https://github.com/Jailbreak-roothide/T4MJBRoothide/releases/download/v1.0/com.reprovision.again_0.8.4-rootless.28_iphoneos-arm64e.deb
+Size: 28311552
+Description: Cong cu ky lai chung chi ung dung tu dong tren thiet bi iOS
+Tag: role::hacker, purpose::extension
