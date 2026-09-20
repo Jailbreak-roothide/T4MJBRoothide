@@ -9,13 +9,11 @@ jobs:
     runs-on: macos-latest
 
     steps:
-      - name: 1. Cai dat Theos truc tiep
+      - name: 1. Cai dat Theos va SDK iOS 16.5
         run: |
           git clone --recursive https://github.com/theos/theos.git ~/theos
           echo "THEOS=$HOME/theos" >> $GITHUB_ENV
-
-      - name: 2. Cai dat iOS 16.5 SDK
-        run: |
+          
           git clone --quiet -n --depth=1 --filter=tree:0 https://github.com/theos/sdks.git ~/theos/sdks-tmp
           cd ~/theos/sdks-tmp
           git sparse-checkout set --no-cone iPhoneOS16.5.sdk
@@ -23,62 +21,74 @@ jobs:
           mv iPhoneOS16.5.sdk ~/theos/sdks/
           rm -rf ~/theos/sdks-tmp
 
-      - name: 3. Giai nen ma nguon va cai dat cong cu ky
+      - name: 2. Giai nen ma nguon va cai dat cong cu
         run: |
           brew install unar libarchive ldid
           curl -L -o source.rar "https://github.com/Jailbreak-roothide/T4MJBRoothide/releases/download/v2.0/TrollStore-2.1.1vn.rar"
           unar -o src_extracted source.rar
-          
+
+          ROOT_DIR=$(find src_extracted -type d -name "RootHelper" -exec dirname {} \; | head -n 1)
+          echo "ROOT_DIR=$ROOT_DIR" >> $GITHUB_ENV
           TS_APP_DIR=$(find src_extracted -type d -name "TrollStore" | head -n 1)
           echo "TS_APP_DIR=$TS_APP_DIR" >> $GITHUB_ENV
 
+          # Chép header libarchive
           LIBARCHIVE_PREFIX=$(brew --prefix libarchive)
           cp "$LIBARCHIVE_PREFIX/include/archive.h" "$TS_APP_DIR/"
           cp "$LIBARCHIVE_PREFIX/include/archive_entry.h" "$TS_APP_DIR/"
 
+          # Tải TrollStore gốc để lấy helper
           curl -L -o official.tar "https://github.com/opa334/TrollStore/releases/download/2.1.1/TrollStore.tar"
           mkdir -p official_extracted
           tar -xvf official.tar -C official_extracted/
 
-      - name: 4. Bien dich TrollStore, Ky quyen Entitlements va Dong goi
+      - name: 3. Build cong cu bypass CoreTrust (fastPathSign)
+        run: |
+          cd "$ROOT_DIR"
+          rm -rf ChOma
+          git clone --recursive https://github.com/opa334/ChOma.git
+          
+          cd Exploits/fastPathSign
+          clang -O3 -framework Foundation -framework CoreServices -framework Security \
+            -I../../ChOma/output/include \
+            -I../../ChOma/src \
+            ../../ChOma/src/*.c \
+            src/main.m src/codesign.m src/coretrust_bug.c \
+            -o fastPathSign || clang -O3 -framework Foundation -framework Security src/*.m src/*.c ../../ChOma/src/*.c -I../../ChOma/src -o fastPathSign
+          chmod 755 fastPathSign
+          ./fastPathSign || true
+
+      - name: 4. Bien dich TrollStore va ky bypass CoreTrust
         run: |
           export THEOS=$HOME/theos
-          WORKSPACE_DIR=$(pwd)
+          cd "$TS_APP_DIR"
           
-          # 1. Bien dich file nhi phan TrollStore
-          cd "$WORKSPACE_DIR/$TS_APP_DIR"
+          # Đảm bảo target build app hoàn tất
           make clean || true
-          make FINALPACKAGE=1 ADDITIONAL_CFLAGS="-Wno-error" ADDITIONAL_OBJCFLAGS="-Wno-error" || true
-
-          # 2. Chuan bi thu muc package
-          cd "$WORKSPACE_DIR"
+          make FINALPACKAGE=1 ADDITIONAL_CFLAGS="-Wno-error" ADDITIONAL_OBJCFLAGS="-Wno-error"
+          
+          # Đóng gói sản phẩm
+          cd -
           rm -rf package_dir && mkdir -p package_dir
-          cp -r official_extracted/TrollStore.app package_dir/
-
-          # 3. Thay the file thuc thi TrollStore bang file Tieng Viet vua bien dich
-          COMPILED_BIN=$(find "$TS_APP_DIR" -type f -name "TrollStore" | grep "arm64" | head -n 1)
-          if [ -f "$COMPILED_BIN" ]; then
-            echo "Chep file thuc thi da bien dich..."
-            cp "$COMPILED_BIN" package_dir/TrollStore.app/TrollStore
-            chmod 755 package_dir/TrollStore.app/TrollStore
+          
+          # Lấy TrollStore.app đã được chính Theos compile và ký CoreTrust
+          if [ -d "$TS_APP_DIR/.theos/obj/TrollStore.app" ]; then
+            cp -r "$TS_APP_DIR/.theos/obj/TrollStore.app" package_dir/
+          else
+            cp -r official_extracted/TrollStore.app package_dir/
+            cp "$TS_APP_DIR/.theos/obj/arm64/TrollStore.app/TrollStore" package_dir/TrollStore.app/
+            "$ROOT_DIR/Exploits/fastPathSign/fastPathSign" package_dir/TrollStore.app/TrollStore "$TS_APP_DIR/entitlements.plist"
           fi
 
-          # 4. Chep de tai nguyen va file ngon ngu
-          cp -r "$TS_APP_DIR/Resources/"* package_dir/TrollStore.app/ 2>/dev/null || true
+          # Đưa trollstorehelper gốc vào
+          cp official_extracted/TrollStore.app/trollstorehelper package_dir/TrollStore.app/
+          cp official_extracted/TrollStore.app/PersistenceHelper package_dir/TrollStore.app/ 2>/dev/null || true
+          chmod 755 package_dir/TrollStore.app/trollstorehelper
+          chmod 755 package_dir/TrollStore.app/TrollStore
+
+          # Chép đè tài nguyên ngôn ngữ tiếng Việt
           find "$TS_APP_DIR" -name "*.lproj" -exec cp -r {} package_dir/TrollStore.app/ \; 2>/dev/null || true
 
-          # 5. KY QUYEN ENTITLEMENTS (Buoc quan trong nhat tranh vang app)
-          ENTITLEMENTS_FILE="$TS_APP_DIR/entitlements.plist"
-          if [ -f "$ENTITLEMENTS_FILE" ]; then
-            echo "Ky TrollStore voi file entitlements..."
-            ldid -S"$ENTITLEMENTS_FILE" package_dir/TrollStore.app/TrollStore
-          else
-            echo "Trich xuat entitlements tu app goc va ky..."
-            ldid -e official_extracted/TrollStore.app/TrollStore > orig_ent.plist
-            ldid -Sorig_ent.plist package_dir/TrollStore.app/TrollStore
-          fi
-
-          # 6. Dong goi TrollStore.tar
           cd package_dir
           tar -cvf ../TrollStore.tar TrollStore.app
           cd ..
