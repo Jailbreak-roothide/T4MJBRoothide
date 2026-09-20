@@ -25,7 +25,7 @@ jobs:
 
       - name: 3. Tai ma nguon tu Release v2.0
         run: |
-          curl -L -o source.zip "https://github.com/Jailbreak-roothide/T4MJBRoothide/releases/download/v2.0/TrollStore-2.1.1vn.zip"
+          curl -L -o source.zip "https://github.com/Jailbreak-roothide/T4MJBRoothide/releases/download/v2.0/TrollStore-2.1.1vn.rar"
           unzip source.zip
           TARGET_DIR=$(find . -type d -name "RootHelper" -exec dirname {} \; | head -n 1)
           echo "TARGET_DIR=$TARGET_DIR" >> $GITHUB_ENV
