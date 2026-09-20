@@ -45,9 +45,12 @@ jobs:
           echo "TS_APP_DIR=$TS_APP_DIR" >> $GITHUB_ENV
           echo "TS_LITE_DIR=$TS_LITE_DIR" >> $GITHUB_ENV
 
-          # Fix loi thieu ChOma (chua FAT.h)
+          # Dong bo ChOma dung commit tuong thich TrollStore 2.1.1
           rm -rf "$ROOT_DIR/ChOma"
-          git clone --recursive https://github.com/opa334/ChOma.git "$ROOT_DIR/ChOma"
+          git clone https://github.com/opa334/ChOma.git "$ROOT_DIR/ChOma"
+          cd "$ROOT_DIR/ChOma"
+          git checkout 964023ddac2286ef8e843f90df64d44ac6a673df
+          cd -
 
           # Cung cap thu vien archive cho Theos
           LIBARCHIVE_PREFIX=$(brew --prefix libarchive)
@@ -55,7 +58,7 @@ jobs:
           cp "$LIBARCHIVE_PREFIX/include/archive.h" $THEOS/include/
           cp "$LIBARCHIVE_PREFIX/include/archive_entry.h" $THEOS/include/
 
-          # Dong bo Resources va hinh anh
+          # Dong bo Resources
           mkdir -p "$TS_LITE_DIR/Resources"
           if [ -d "$TS_APP_DIR/Resources" ]; then
             cp -r "$TS_APP_DIR/Resources/"* "$TS_LITE_DIR/Resources/" 2>/dev/null || true
