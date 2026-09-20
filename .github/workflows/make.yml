@@ -30,10 +30,12 @@ jobs:
 
       - name: 4. Chay bien dich TrollStore
         run: |
-          SRC_DIR=$(find . -maxdepth 3 -name "Makefile" -exec dirname {} \; | head -n 1)
-          cd $SRC_DIR
           export THEOS=$HOME/theos
-          make clean
+          # Neu code nam trong thu muc con TrollStore-2.1.1 thi vao, khong thi dung tai goc
+          if [ -f "TrollStore-2.1.1/Makefile" ]; then
+            cd TrollStore-2.1.1
+          fi
+          make clean || true
           make FINALPACKAGE=1
 
       - name: 5. Luu file thanh pham TrollStore.tar
