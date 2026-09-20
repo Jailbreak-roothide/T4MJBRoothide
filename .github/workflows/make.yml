@@ -33,8 +33,10 @@ jobs:
           unar -o src_extracted source.rar
           
           ROOT_DIR=$(find src_extracted -type d -name "RootHelper" -exec dirname {} \; | head -n 1)
+          TS_APP_DIR=$(find src_extracted -type d -name "TrollStore" | head -n 1)
           TS_LITE_DIR=$(find src_extracted -type d -name "TrollStoreLite" | head -n 1)
           echo "ROOT_DIR=$ROOT_DIR" >> $GITHUB_ENV
+          echo "TS_APP_DIR=$TS_APP_DIR" >> $GITHUB_ENV
           echo "TS_LITE_DIR=$TS_LITE_DIR" >> $GITHUB_ENV
 
           # Header archive
@@ -42,6 +44,14 @@ jobs:
           mkdir -p $THEOS/include
           cp "$LIBARCHIVE_PREFIX/include/archive.h" $THEOS/include/
           cp "$LIBARCHIVE_PREFIX/include/archive_entry.h" $THEOS/include/
+          cp "$LIBARCHIVE_PREFIX/include/archive.h" "$TS_LITE_DIR/" 2>/dev/null || true
+          cp "$LIBARCHIVE_PREFIX/include/archive_entry.h" "$TS_LITE_DIR/" 2>/dev/null || true
+
+          # Dong bo toan bo thu muc tai nguyen va anh wallpaper.png tu TrollStore sang TrollStoreLite
+          mkdir -p "$TS_LITE_DIR/Resources"
+          if [ -d "$TS_APP_DIR/Resources" ]; then
+            cp -r "$TS_APP_DIR/Resources/"* "$TS_LITE_DIR/Resources/" 2>/dev/null || true
+          fi
 
           # Tai TrollStore 2.1.1 goc de lay trollstorehelper da ky quyen root san
           curl -L -o official.tar "https://github.com/opa334/TrollStore/releases/download/2.1.1/TrollStore.tar"
@@ -54,7 +64,6 @@ jobs:
           cd "$TS_LITE_DIR"
 
           make clean || true
-          # Chi bien dich app, chua dong goi voi make package de tu nhet helper vao
           make FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless \
             ADDITIONAL_CFLAGS="-Wno-error" ADDITIONAL_OBJCFLAGS="-Wno-error"
 
@@ -66,11 +75,11 @@ jobs:
           rm -rf deb_rootless && mkdir -p deb_rootless/DEBIAN
           mkdir -p deb_rootless/var/jb/Applications/TrollStoreLite.app
 
-          # 2. Copy toan bo file app vua duoc bien dich
+          # 2. Copy toan bo app vua bien dich
           COMPILED_APP=$(find "$TS_LITE_DIR/.theos/obj" -type d -name "TrollStoreLite.app" | head -n 1)
           cp -r "$COMPILED_APP/"* deb_rootless/var/jb/Applications/TrollStoreLite.app/
 
-          # 3. Nhet trollstorehelper goc vao bundle (Thieu cai nay la khong the cai IPA)
+          # 3. Nhet trollstorehelper vao bundle va cap quyen thuc thi
           cp official_extracted/TrollStore.app/trollstorehelper deb_rootless/var/jb/Applications/TrollStoreLite.app/
           chmod 755 deb_rootless/var/jb/Applications/TrollStoreLite.app/trollstorehelper
 
