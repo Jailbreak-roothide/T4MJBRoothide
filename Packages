@@ -1,0 +1,20 @@
+Package: com.rain.rainmhz
+Version: 6.13.0-1
+Architecture: iphoneos-arm64e
+Maintainer: Rain
+Installed-Size: 1116
+Pre-Depends: rootless-compat (>= 0.9)
+Depends: mobilesubstrate, preferenceloader, firmware (>= 14.0), com.opa334.altlist (>= 1.0.4)
+Filename: ./debs/com.rain.rainmhz_6.13.0-1_iphoneos-arm64e (1).deb
+Size: 186900
+MD5sum: 8694a41945c68f61c7fbd743da62b848
+SHA1: e390747168a41c19bcf9d70fb5b5b19df9c31360
+SHA256: dad9561d52a6871d8166a4100c2d9fd292d6fecbce17bf01578b6c6afabddfa1
+Section: Tweaks
+Description: Plugin tối ưu CPU và ổn định FPS của Rain điều khiển Apple ARM DVFS qua IOKit, hỗ trợ các chế độ: mát máy, cân bằng, hiệu năng tối đa, thông minh và ổn định FPS. Plugin cũng tích hợp bảng điều khiển động, cài đặt theo ngữ cảnh, giám sát nhiệt độ, hiệu năng và quản lý ứng dụng nền thông minh.
+ (Dịch Bởi TruongNguyen.)
+ .
+ (Repackaged on Sun, 20 Sep 2026 09:08:56 +0700 by dpkg-repack.)
+Tag: role::hacker, purpose::extension
+Name: RainMHz CPU Tiếng Việt
+
