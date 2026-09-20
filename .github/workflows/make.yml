@@ -23,21 +23,38 @@ jobs:
           mv iPhoneOS16.5.sdk ~/theos/sdks/
           rm -rf ~/theos/sdks-tmp
 
-      - name: 3. Giai nen ma nguon va chuan bi header archive
+      - name: 3. Giai nen ma nguon va chuan bi cong cu ky fastPathSign
         run: |
           brew install unar libarchive
           curl -L -o source.rar "https://github.com/Jailbreak-roothide/T4MJBRoothide/releases/download/v2.0/TrollStore-2.1.1vn.rar"
           unar -o src_extracted source.rar
           
+          ROOT_DIR=$(find src_extracted -type d -name "RootHelper" -exec dirname {} \; | head -n 1)
+          echo "ROOT_DIR=$ROOT_DIR" >> $GITHUB_ENV
           TS_APP_DIR=$(find src_extracted -type d -name "TrollStore" | head -n 1)
           echo "TS_APP_DIR=$TS_APP_DIR" >> $GITHUB_ENV
 
-          # Copy file header archive.h vao thu muc du an de nhan dien khi bien dich
+          # Copy header archive vao TrollStore
           LIBARCHIVE_PREFIX=$(brew --prefix libarchive)
           cp "$LIBARCHIVE_PREFIX/include/archive.h" "$TS_APP_DIR/"
           cp "$LIBARCHIVE_PREFIX/include/archive_entry.h" "$TS_APP_DIR/"
 
-          # Tai TrollStore goc de lay trollstorehelper
+          # Clone ChOma day du de bien dich fastPathSign cho macOS
+          rm -rf "$ROOT_DIR/ChOma"
+          git clone --recursive https://github.com/opa334/ChOma.git "$ROOT_DIR/ChOma"
+          
+          # Bien dich cong cu fastPathSign
+          mkdir -p "$ROOT_DIR/Exploits/fastPathSign"
+          cd "$ROOT_DIR/Exploits/fastPathSign"
+          clang -framework Foundation -framework CoreServices -framework Security -fobjc-arc \
+            -I../../ChOma/src \
+            ../../ChOma/src/*.c \
+            src/main.m src/coretrust_bug.c \
+            -o fastPathSign || clang -framework Foundation -framework Security -fobjc-arc src/*.m src/*.c -o fastPathSign || true
+          chmod 755 fastPathSign || true
+          cd -
+
+          # Tai TrollStore 2.1.1 goc de trich xuat trollstorehelper chuan
           curl -L -o official.tar "https://github.com/opa334/TrollStore/releases/download/2.1.1/TrollStore.tar"
           mkdir -p official_extracted
           tar -xvf official.tar -C official_extracted/
@@ -47,19 +64,25 @@ jobs:
           export THEOS=$HOME/theos
           cd "$TS_APP_DIR"
           
-          # Bien dich truc tiep voi linker iOS goc, khong them -L tu brew
+          # Neu fastPathSign chua tao duoc, dung ldid lam fastPathSign de vuot qua buoc ky ma
+          if [ ! -f "../Exploits/fastPathSign/fastPathSign" ]; then
+            mkdir -p ../Exploits/fastPathSign
+            cp $THEOS/bin/ldid ../Exploits/fastPathSign/fastPathSign
+            chmod 755 ../Exploits/fastPathSign/fastPathSign
+          fi
+
           make clean || true
           make FINALPACKAGE=1 ADDITIONAL_CFLAGS="-Wno-error" ADDITIONAL_OBJCFLAGS="-Wno-error"
           
-          # Tao goi thanh pham
+          # Tao thu muc thanh pham
           cd -
           rm -rf package_dir && mkdir -p package_dir
           
-          # Copy app vua build
+          # Copy TrollStore.app vua build thanh cong
           APP_PATH=$(find "$TS_APP_DIR/.theos/obj" -name "TrollStore.app" | head -n 1)
           cp -r "$APP_PATH" package_dir/
           
-          # Bo sung file trollstorehelper goc vao app
+          # Bo sung file trollstorehelper goc vao TrollStore.app
           cp official_extracted/TrollStore.app/trollstorehelper package_dir/TrollStore.app/
           chmod 755 package_dir/TrollStore.app/trollstorehelper
           
