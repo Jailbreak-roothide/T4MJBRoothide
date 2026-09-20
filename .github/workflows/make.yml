@@ -23,21 +23,21 @@ jobs:
           mv iPhoneOS16.5.sdk ~/theos/sdks/
           rm -rf ~/theos/sdks-tmp
 
-      - name: 3. Giai nen ma nguon va cai dat libarchive
+      - name: 3. Giai nen ma nguon va chuan bi header archive
         run: |
           brew install unar libarchive
           curl -L -o source.rar "https://github.com/Jailbreak-roothide/T4MJBRoothide/releases/download/v2.0/TrollStore-2.1.1vn.rar"
           unar -o src_extracted source.rar
           
-          # Tim thu muc TrollStore App
           TS_APP_DIR=$(find src_extracted -type d -name "TrollStore" | head -n 1)
           echo "TS_APP_DIR=$TS_APP_DIR" >> $GITHUB_ENV
 
-          # Lay duong dan include va lib cua libarchive
+          # Copy file header archive.h vao thu muc du an de nhan dien khi bien dich
           LIBARCHIVE_PREFIX=$(brew --prefix libarchive)
-          echo "LIBARCHIVE_PREFIX=$LIBARCHIVE_PREFIX" >> $GITHUB_ENV
+          cp "$LIBARCHIVE_PREFIX/include/archive.h" "$TS_APP_DIR/"
+          cp "$LIBARCHIVE_PREFIX/include/archive_entry.h" "$TS_APP_DIR/"
 
-          # Tai TrollStore 2.1.1 goc de lay trollstorehelper chuan
+          # Tai TrollStore goc de lay trollstorehelper
           curl -L -o official.tar "https://github.com/opa334/TrollStore/releases/download/2.1.1/TrollStore.tar"
           mkdir -p official_extracted
           tar -xvf official.tar -C official_extracted/
@@ -47,12 +47,9 @@ jobs:
           export THEOS=$HOME/theos
           cd "$TS_APP_DIR"
           
-          # Build kem duong dan libarchive de nhan archive.h
+          # Bien dich truc tiep voi linker iOS goc, khong them -L tu brew
           make clean || true
-          make FINALPACKAGE=1 \
-            ADDITIONAL_CFLAGS="-I${LIBARCHIVE_PREFIX}/include -Wno-error" \
-            ADDITIONAL_OBJCFLAGS="-I${LIBARCHIVE_PREFIX}/include -Wno-error" \
-            ADDITIONAL_LDFLAGS="-L${LIBARCHIVE_PREFIX}/lib -larchive"
+          make FINALPACKAGE=1 ADDITIONAL_CFLAGS="-Wno-error" ADDITIONAL_OBJCFLAGS="-Wno-error"
           
           # Tao goi thanh pham
           cd -
