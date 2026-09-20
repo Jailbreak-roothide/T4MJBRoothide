@@ -45,7 +45,7 @@ jobs:
           echo "TS_APP_DIR=$TS_APP_DIR" >> $GITHUB_ENV
           echo "TS_LITE_DIR=$TS_LITE_DIR" >> $GITHUB_ENV
 
-          # Dong bo ChOma dung commit tuong thich TrollStore 2.1.1
+          # Checkout dung commit ChOma tuong thich TrollStore 2.1.1
           rm -rf "$ROOT_DIR/ChOma"
           git clone https://github.com/opa334/ChOma.git "$ROOT_DIR/ChOma"
           cd "$ROOT_DIR/ChOma"
@@ -58,7 +58,7 @@ jobs:
           cp "$LIBARCHIVE_PREFIX/include/archive.h" $THEOS/include/
           cp "$LIBARCHIVE_PREFIX/include/archive_entry.h" $THEOS/include/
 
-          # Dong bo Resources
+          # Tao va dong bo thu muc Resources
           mkdir -p "$TS_LITE_DIR/Resources"
           if [ -d "$TS_APP_DIR/Resources" ]; then
             cp -r "$TS_APP_DIR/Resources/"* "$TS_LITE_DIR/Resources/" 2>/dev/null || true
@@ -76,8 +76,13 @@ jobs:
           HELPER_BIN=$(find .theos/obj -type f -name "trollstorehelper*" | head -n 1)
           echo "Tim thay helper lite tai: $HELPER_BIN"
 
+          # Dam bao thu muc Resources ton tai tuyet doi truoc khi copy
+          mkdir -p "$TS_LITE_DIR/Resources"
           cp "$HELPER_BIN" "$TS_LITE_DIR/Resources/trollstorehelper"
           chmod 755 "$TS_LITE_DIR/Resources/trollstorehelper"
+
+          echo "=== Kiem tra helper da vao dung Resources ==="
+          ls -la "$TS_LITE_DIR/Resources/trollstorehelper"
 
       - name: 5. Theos dong goi TrollStore Lite Rootless DEB
         run: |
