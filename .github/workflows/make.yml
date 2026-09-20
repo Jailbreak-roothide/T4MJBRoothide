@@ -23,9 +23,9 @@ jobs:
           mv iPhoneOS16.5.sdk ~/theos/sdks/
           rm -rf ~/theos/sdks-tmp
 
-      - name: 3. Giai nen ma nguon va chuan bi header archive
+      - name: 3. Giai nen ma nguon va cai dat cong cu ky
         run: |
-          brew install unar libarchive
+          brew install unar libarchive ldid
           curl -L -o source.rar "https://github.com/Jailbreak-roothide/T4MJBRoothide/releases/download/v2.0/TrollStore-2.1.1vn.rar"
           unar -o src_extracted source.rar
           
@@ -40,17 +40,17 @@ jobs:
           mkdir -p official_extracted
           tar -xvf official.tar -C official_extracted/
 
-      - name: 4. Bien dich TrollStore va Dong goi san pham
+      - name: 4. Bien dich TrollStore, Ky quyen Entitlements va Dong goi
         run: |
           export THEOS=$HOME/theos
           WORKSPACE_DIR=$(pwd)
           
-          # 1. Chi bien dich file nhi phan TrollStore (khong can buoc ky ma cua Theos)
+          # 1. Bien dich file nhi phan TrollStore
           cd "$WORKSPACE_DIR/$TS_APP_DIR"
           make clean || true
-          make internal-application-compile FINALPACKAGE=1 ADDITIONAL_CFLAGS="-Wno-error" ADDITIONAL_OBJCFLAGS="-Wno-error" || make FINALPACKAGE=1 ADDITIONAL_CFLAGS="-Wno-error" ADDITIONAL_OBJCFLAGS="-Wno-error" || true
+          make FINALPACKAGE=1 ADDITIONAL_CFLAGS="-Wno-error" ADDITIONAL_OBJCFLAGS="-Wno-error" || true
 
-          # 2. Chuan bi thu muc dong goi dua tren ban chinh thuc
+          # 2. Chuan bi thu muc package
           cd "$WORKSPACE_DIR"
           rm -rf package_dir && mkdir -p package_dir
           cp -r official_extracted/TrollStore.app package_dir/
@@ -58,20 +58,27 @@ jobs:
           # 3. Thay the file thuc thi TrollStore bang file Tieng Viet vua bien dich
           COMPILED_BIN=$(find "$TS_APP_DIR" -type f -name "TrollStore" | grep "arm64" | head -n 1)
           if [ -f "$COMPILED_BIN" ]; then
-            echo "Tim thay file nhi phan da bien dich: $COMPILED_BIN"
+            echo "Chep file thuc thi da bien dich..."
             cp "$COMPILED_BIN" package_dir/TrollStore.app/TrollStore
             chmod 755 package_dir/TrollStore.app/TrollStore
           fi
 
-          # 4. Chep de tat ca file tai nguyen, ngon ngu, icon tu ma nguon vao app
+          # 4. Chep de tai nguyen va file ngon ngu
           cp -r "$TS_APP_DIR/Resources/"* package_dir/TrollStore.app/ 2>/dev/null || true
           find "$TS_APP_DIR" -name "*.lproj" -exec cp -r {} package_dir/TrollStore.app/ \; 2>/dev/null || true
 
-          # 5. Ky lai ung dung bang ldid chuan Theos
-          $THEOS/bin/ldid -S package_dir/TrollStore.app/TrollStore || true
-          $THEOS/bin/ldid -S package_dir/TrollStore.app/trollstorehelper || true
+          # 5. KY QUYEN ENTITLEMENTS (Buoc quan trong nhat tranh vang app)
+          ENTITLEMENTS_FILE="$TS_APP_DIR/entitlements.plist"
+          if [ -f "$ENTITLEMENTS_FILE" ]; then
+            echo "Ky TrollStore voi file entitlements..."
+            ldid -S"$ENTITLEMENTS_FILE" package_dir/TrollStore.app/TrollStore
+          else
+            echo "Trich xuat entitlements tu app goc va ky..."
+            ldid -e official_extracted/TrollStore.app/TrollStore > orig_ent.plist
+            ldid -Sorig_ent.plist package_dir/TrollStore.app/TrollStore
+          fi
 
-          # 6. Dong goi tar
+          # 6. Dong goi TrollStore.tar
           cd package_dir
           tar -cvf ../TrollStore.tar TrollStore.app
           cd ..
