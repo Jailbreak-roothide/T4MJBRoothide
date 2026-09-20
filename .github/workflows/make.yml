@@ -36,81 +36,60 @@ jobs:
           unar -o src_extracted source.rar
 
           ROOT_DIR=$(find src_extracted -type d -name "RootHelper" -exec dirname {} \; | head -n 1)
+          ROOT_HELPER_DIR=$(find src_extracted -type d -name "RootHelper" | head -n 1)
           TS_APP_DIR=$(find src_extracted -type d -name "TrollStore" | head -n 1)
           TS_LITE_DIR=$(find src_extracted -type d -name "TrollStoreLite" | head -n 1)
+
           echo "ROOT_DIR=$ROOT_DIR" >> $GITHUB_ENV
+          echo "ROOT_HELPER_DIR=$ROOT_HELPER_DIR" >> $GITHUB_ENV
           echo "TS_APP_DIR=$TS_APP_DIR" >> $GITHUB_ENV
           echo "TS_LITE_DIR=$TS_LITE_DIR" >> $GITHUB_ENV
 
-          # Header archive
+          # Cung cap thu vien archive cho Theos
           LIBARCHIVE_PREFIX=$(brew --prefix libarchive)
           mkdir -p $THEOS/include
           cp "$LIBARCHIVE_PREFIX/include/archive.h" $THEOS/include/
           cp "$LIBARCHIVE_PREFIX/include/archive_entry.h" $THEOS/include/
-          cp "$LIBARCHIVE_PREFIX/include/archive.h" "$TS_LITE_DIR/" 2>/dev/null || true
-          cp "$LIBARCHIVE_PREFIX/include/archive_entry.h" "$TS_LITE_DIR/" 2>/dev/null || true
 
-          # Dong bo Resources
+          # Dong bo Resources va hinh anh
           mkdir -p "$TS_LITE_DIR/Resources"
           if [ -d "$TS_APP_DIR/Resources" ]; then
             cp -r "$TS_APP_DIR/Resources/"* "$TS_LITE_DIR/Resources/" 2>/dev/null || true
           fi
 
-          # Tai helper goc tu ban phat hanh 2.1.1
-          curl -L -o official.tar "https://github.com/opa334/TrollStore/releases/download/2.1.1/TrollStore.tar"
-          mkdir -p official_extracted
-          tar -xvf official.tar -C official_extracted/
+      - name: 4. Bien dich dung chuan RootHelper Lite Rootless
+        run: |
+          export THEOS=$HOME/theos
+          cd "$ROOT_HELPER_DIR"
 
-      - name: 4. Bien dich TrollStore Lite
+          # Clean va bien dich dung chuan trollstorehelper_lite cho Rootless
+          make clean || true
+          make DEBUG=0 TROLLSTORE_LITE=1 THEOS_PACKAGE_SCHEME=rootless \
+            ADDITIONAL_CFLAGS="-Wno-error" ADDITIONAL_OBJCFLAGS="-Wno-error"
+
+          # Tim file nhi phan trollstorehelper vua build xong tu RootHelper
+          HELPER_BIN=$(find .theos/obj -type f -name "trollstorehelper*" | head -n 1)
+          echo "Tim thay helper lite: $HELPER_BIN"
+          
+          # Chep vao dung TrollStoreLite/Resources/trollstorehelper theo chuan Makefile cua opa334
+          cp "$HELPER_BIN" "$TS_LITE_DIR/Resources/trollstorehelper"
+          chmod 755 "$TS_LITE_DIR/Resources/trollstorehelper"
+
+      - name: 5. Theos dong goi TrollStore Lite Rootless DEB
         run: |
           export THEOS=$HOME/theos
           cd "$TS_LITE_DIR"
 
           make clean || true
-          # Bien dich ung dung (khong goi make package de kiem soat nhet helper truc tiep)
-          make FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless \
+          # Theos tu dong xu ly postinst va quyen han Rootless chuan 100%
+          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless \
             ADDITIONAL_CFLAGS="-Wno-error" ADDITIONAL_OBJCFLAGS="-Wno-error"
 
-      - name: 5. Dong goi DEB Rootless chuan
-        run: |
-          APP_PATH=$(find "$TS_LITE_DIR/.theos/obj" -type d -name "TrollStoreLite.app" | head -n 1)
-
-          # 1. Chep trollstorehelper thang vao thu muc goc cua .app
-          cp official_extracted/TrollStore.app/trollstorehelper "$APP_PATH/trollstorehelper"
-          chmod 755 "$APP_PATH/trollstorehelper"
-          ldid -S "$APP_PATH/trollstorehelper" 2>/dev/null || true
-          ldid -S "$APP_PATH/TrollStoreLite" 2>/dev/null || true
-
-          # 2. Xay dung cay thu muc Rootless chuan cho dpkg
-          STAGE_DIR="stage_deb"
-          rm -rf "$STAGE_DIR" && mkdir -p "$STAGE_DIR/DEBIAN"
-          mkdir -p "$STAGE_DIR/var/jb/Applications"
-
-          # 3. Sao chep toan bo .app vao dung vi tri
-          cp -r "$APP_PATH" "$STAGE_DIR/var/jb/Applications/"
-
-          # 4. Chep file control
-          cp "$TS_LITE_DIR/control" "$STAGE_DIR/DEBIAN/control"
-
-          # 5. Tao script postinst cap quyen SetUID Root
-          cat << 'EOF' > "$STAGE_DIR/DEBIAN/postinst"
-#!/bin/sh
-HELPER="/var/jb/Applications/TrollStoreLite.app/trollstorehelper"
-if [ -f "$HELPER" ]; then
-    chown root:wheel "$HELPER"
-    chmod 4755 "$HELPER"
-fi
-uicache -p /var/jb/Applications/TrollStoreLite.app 2>/dev/null || true
-exit 0
-EOF
-          chmod 755 "$STAGE_DIR/DEBIAN/postinst"
-
-          # 6. Dong goi file deb
-          mkdir -p packages
-          dpkg-deb -Zxz --root-owner-group -b "$STAGE_DIR" packages/com.opa334.trollstorelite_2.1.1_iphoneos-arm64.deb
+          echo "=== Danh sach file deb thanh pham ==="
+          ls -lh packages/
 
       - name: 6. Luu file DEB thanh pham
         uses: actions/upload-artifact@v4
         with:
           name: TrollStoreLite-Rootless-DEB
-          path: "packages/*.deb"
+          path: "${{ env.TS_LITE_DIR }}/packages/*.deb"
