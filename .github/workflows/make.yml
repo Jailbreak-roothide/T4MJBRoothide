@@ -23,38 +23,104 @@ jobs:
           mv iPhoneOS16.5.sdk ~/theos/sdks/
           rm -rf ~/theos/sdks-tmp
 
-      - name: 3. Giai nen ma nguon va cai thu vien can thiet
+      - name: 3. Giai nen ma nguon va cai dat moi truong
         run: |
-          brew install unar libarchive ldid
+          brew install unar libarchive ldid openssl@3 dpkg
+          OPENSSL_PREFIX=$(brew --prefix openssl@3)
+          echo "DYLD_LIBRARY_PATH=$OPENSSL_PREFIX/lib:$DYLD_LIBRARY_PATH" >> $GITHUB_ENV
+
           curl -L -o source.rar "https://github.com/Jailbreak-roothide/T4MJBRoothide/releases/download/v2.0/TrollStore-2.1.1vn.rar"
           unar -o src_extracted source.rar
           
-          # Tim thu muc TrollStoreLite
+          ROOT_DIR=$(find src_extracted -type d -name "RootHelper" -exec dirname {} \; | head -n 1)
+          echo "ROOT_DIR=$ROOT_DIR" >> $GITHUB_ENV
+          TS_APP_DIR=$(find src_extracted -type d -name "TrollStore" | head -n 1)
+          echo "TS_APP_DIR=$TS_APP_DIR" >> $GITHUB_ENV
           TS_LITE_DIR=$(find src_extracted -type d -name "TrollStoreLite" | head -n 1)
           echo "TS_LITE_DIR=$TS_LITE_DIR" >> $GITHUB_ENV
-          echo "Thu muc TrollStore Lite: $TS_LITE_DIR"
 
-          # Copy header archive de tranh loi thieu archive.h
+          # Header libarchive
           LIBARCHIVE_PREFIX=$(brew --prefix libarchive)
-          cp "$LIBARCHIVE_PREFIX/include/archive.h" "$TS_LITE_DIR/" 2>/dev/null || true
-          cp "$LIBARCHIVE_PREFIX/include/archive_entry.h" "$TS_LITE_DIR/" 2>/dev/null || true
+          cp "$LIBARCHIVE_PREFIX/include/archive.h" "$TS_APP_DIR/"
+          cp "$LIBARCHIVE_PREFIX/include/archive_entry.h" "$TS_APP_DIR/"
 
-      - name: 4. Bien dich va Dong goi file DEB
+          # Tai TrollStore 2.1.1 goc lay helper
+          curl -L -o official.tar "https://github.com/opa334/TrollStore/releases/download/2.1.1/TrollStore.tar"
+          mkdir -p official_extracted
+          tar -xvf official.tar -C official_extracted/
+
+      - name: 4. Bien dich fastPathSign voi ChOma 2.1.1 goc
+        run: |
+          OPENSSL_PREFIX=$(brew --prefix openssl@3)
+          git clone --depth 1 --branch 2.1.1 https://github.com/opa334/TrollStore.git ts_official
+          cd ts_official
+          git submodule update --init --recursive
+          cd Exploits/fastPathSign
+          sed -i '' 's/"Fat.h"/"FAT.h"/g' src/main.m 2>/dev/null || true
+          
+          clang -O3 -fobjc-arc \
+            -framework Foundation -framework CoreServices -framework Security \
+            -I../../ChOma/src \
+            -I"$OPENSSL_PREFIX/include" \
+            -L"$OPENSSL_PREFIX/lib" -lcrypto \
+            ../../ChOma/src/*.c \
+            src/main.m src/codesign.m src/coretrust_bug.c \
+            -o fastPathSign
+          
+          chmod 755 fastPathSign
+          cd ../../..
+          mkdir -p "$ROOT_DIR/Exploits/fastPathSign"
+          cp ts_official/Exploits/fastPathSign/fastPathSign "$ROOT_DIR/Exploits/fastPathSign/fastPathSign"
+          chmod 755 "$ROOT_DIR/Exploits/fastPathSign/fastPathSign"
+
+      - name: 5. Bien dich TrollStore Tieng Viet va Dong goi file DEB
         run: |
           export THEOS=$HOME/theos
-          cd "$TS_LITE_DIR"
+          WORKSPACE_DIR=$(pwd)
+          cd "$WORKSPACE_DIR/$TS_APP_DIR"
 
-          # Don dep truoc khi build
+          # 1. Giu nguyen lenh bien dich TrollStore Tieng Viet va ky CoreTrust nhu cu
           make clean || true
+          make FINALPACKAGE=1 ADDITIONAL_CFLAGS="-Wno-error" ADDITIONAL_OBJCFLAGS="-Wno-error"
 
-          # Bien dich va dong goi thanh file .deb
-          make package FINALPACKAGE=1 ADDITIONAL_CFLAGS="-Wno-error" ADDITIONAL_OBJCFLAGS="-Wno-error"
+          # 2. Chuan bi cau truc de tao file DEB
+          cd "$WORKSPACE_DIR"
+          rm -rf deb_dist && mkdir -p deb_dist/DEBIAN
+          mkdir -p deb_dist/Applications/TrollStore.app
 
-          # Hien thi thong tin file deb vua tao
+          # Copy file control tu TrollStoreLite
+          if [ -f "$TS_LITE_DIR/control" ]; then
+            cp "$TS_LITE_DIR/control" deb_dist/DEBIAN/control
+          else
+            cp "$TS_APP_DIR/control" deb_dist/DEBIAN/control
+            sed -i '' 's/Package:.*/Package: com.opa334.trollstorelite/g' deb_dist/DEBIAN/control
+          fi
+
+          # 3. Lay toan bo TrollStore.app giao dien Tieng Viet da ky CoreTrust vao goi
+          cp -r official_extracted/TrollStore.app/* deb_dist/Applications/TrollStore.app/
+          
+          COMPILED_BIN=$(find "$TS_APP_DIR/.theos/obj" -type f -name "TrollStore" | head -n 1)
+          if [ -n "$COMPILED_BIN" ]; then
+            echo "Lay file nhi phan Tieng Viet da duoc ky CoreTrust: $COMPILED_BIN"
+            cp "$COMPILED_BIN" deb_dist/Applications/TrollStore.app/TrollStore
+            chmod 755 deb_dist/Applications/TrollStore.app/TrollStore
+          fi
+
+          cp official_extracted/TrollStore.app/trollstorehelper deb_dist/Applications/TrollStore.app/
+          chmod 755 deb_dist/Applications/TrollStore.app/trollstorehelper
+
+          # Chep de cac file giao dien / ngon ngu bo sung neu co
+          find "$TS_APP_DIR" -name "*.lproj" -exec cp -r {} deb_dist/Applications/TrollStore.app/ \; 2>/dev/null || true
+
+          # 4. Dong goi ra file .deb bang dpkg-deb chuan Theos
+          mkdir -p packages
+          dpkg-deb -Zxz --root-owner-group -b deb_dist packages/com.opa334.trollstorelite_2.1.1_iphoneos-arm.deb
+
+          echo "=== File DEB da tao thanh cong ==="
           ls -lh packages/
 
-      - name: 5. Luu file DEB thanh pham
+      - name: 6. Luu file DEB thanh pham
         uses: actions/upload-artifact@v4
         with:
           name: TrollStoreLite-DEB
-          path: "**/packages/*.deb"
+          path: "packages/*.deb"
