@@ -3,9 +3,6 @@ name: Tạo TrollStore cho macOS
 on:
   workflow_dispatch:
 
-permissions:
-  contents: read
-
 jobs:
   build:
     name: Xây dựng TrollStore Tiếng Việt
@@ -26,24 +23,17 @@ jobs:
           mv iPhoneOS16.5.sdk ~/theos/sdks/
           rm -rf ~/theos/sdks-tmp
 
-      - name: 3. Tai toan bo file tu Release v2.0 va giai nen
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: 3. Tai ma nguon tu Release v2.0
         run: |
-          # Tai toan bo file dinh kem trong Release v2.0
-          gh release download v2.0 -R Jailbreak-roothide/T4MJBRoothide --dir release_files
-          
-          # Tim va giai nen bat ky file zip nao tim thay
-          find release_files -name "*.zip" -exec unzip -o {} \;
-
-          # Tim thu muc chua Makefile tong cua TrollStore (thu muc co chua thu muc TrollStore va RootHelper)
+          curl -L -o source.zip "https://github.com/Jailbreak-roothide/T4MJBRoothide/releases/download/v2.0/TrollStore-2.1.1vn.zip"
+          unzip source.zip
           TARGET_DIR=$(find . -type d -name "RootHelper" -exec dirname {} \; | head -n 1)
           echo "TARGET_DIR=$TARGET_DIR" >> $GITHUB_ENV
-          echo "Da tim thay thu muc ma nguon tai: $TARGET_DIR"
+          echo "Thu muc ma nguon: $TARGET_DIR"
 
       - name: 4. Chay bien dich TrollStore
         run: |
-          cd $TARGET_DIR
+          cd "$TARGET_DIR"
           export THEOS=$HOME/theos
           make clean || true
           make FINALPACKAGE=1
