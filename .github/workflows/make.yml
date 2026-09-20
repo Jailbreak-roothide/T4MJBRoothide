@@ -30,7 +30,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release download v2.0 -p "TrollStore-2.1.1vn.zip" -R Jailbreak-roothide/T4MJBRoothide -O source.zip
+          gh release view v2.0 -R Jailbreak-roothide/T4MJBRoothide
+          gh release download v2.0 -p "*.zip" -R Jailbreak-roothide/T4MJBRoothide -O source.zip
           unzip source.zip
           SRC_DIR=$(find . -maxdepth 3 -name "Makefile" -exec dirname {} \; | head -n 1)
           echo "SRC_DIR=$SRC_DIR" >> $GITHUB_ENV
