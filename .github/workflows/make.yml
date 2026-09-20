@@ -26,7 +26,7 @@ jobs:
           mv iPhoneOS16.5.sdk ~/theos/sdks/
           rm -rf ~/theos/sdks-tmp
 
-      - name: 3. Giai nen ma nguon va chuan bi thu vien
+      - name: 3. Chuan bi cong cu va ma nguon
         run: |
           brew install unar libarchive ldid openssl@3 dpkg
           OPENSSL_PREFIX=$(brew --prefix openssl@3)
@@ -42,6 +42,7 @@ jobs:
           echo "TS_APP_DIR=$TS_APP_DIR" >> $GITHUB_ENV
           echo "TS_LITE_DIR=$TS_LITE_DIR" >> $GITHUB_ENV
 
+          # Header archive
           LIBARCHIVE_PREFIX=$(brew --prefix libarchive)
           mkdir -p $THEOS/include
           cp "$LIBARCHIVE_PREFIX/include/archive.h" $THEOS/include/
@@ -49,47 +50,41 @@ jobs:
           cp "$LIBARCHIVE_PREFIX/include/archive.h" "$TS_LITE_DIR/" 2>/dev/null || true
           cp "$LIBARCHIVE_PREFIX/include/archive_entry.h" "$TS_LITE_DIR/" 2>/dev/null || true
 
+          # Dong bo Resources
           mkdir -p "$TS_LITE_DIR/Resources"
           if [ -d "$TS_APP_DIR/Resources" ]; then
             cp -r "$TS_APP_DIR/Resources/"* "$TS_LITE_DIR/Resources/" 2>/dev/null || true
           fi
 
+          # Lay helper goc tu opa334 nhet thang vao layout/Resources de Theos dong goi
           curl -L -o official.tar "https://github.com/opa334/TrollStore/releases/download/2.1.1/TrollStore.tar"
           mkdir -p official_extracted
           tar -xvf official.tar -C official_extracted/
 
-      - name: 4. Bien dich TrollStore Lite
+          # Copy trollstorehelper vao thang Resources cua TrollStoreLite de no tu dong nam trong bundle .app
+          cp official_extracted/TrollStore.app/trollstorehelper "$TS_LITE_DIR/Resources/trollstorehelper"
+          chmod 755 "$TS_LITE_DIR/Resources/trollstorehelper"
+
+          # Tao layout DEBIAN postinst cho Theos tu nhan dien va dong goi
+          mkdir -p "$TS_LITE_DIR/layout/DEBIAN"
+          printf '#!/bin/sh\nHELPER="$JBROOT/Applications/TrollStoreLite.app/trollstorehelper"\nif [ -f "$HELPER" ]; then\n    chown root:wheel "$HELPER"\n    chmod 4755 "$HELPER"\nfi\nuicache -p "$JBROOT/Applications/TrollStoreLite.app" 2>/dev/null || true\nexit 0\n' > "$TS_LITE_DIR/layout/DEBIAN/postinst"
+          chmod 755 "$TS_LITE_DIR/layout/DEBIAN/postinst"
+
+      - name: 4. Theos dong goi chuan ROOTLESS
         run: |
           export THEOS=$HOME/theos
           cd "$TS_LITE_DIR"
 
           make clean || true
-          make FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless \
+          # Chinh xac THEOS_PACKAGE_SCHEME=rootless de Theos tu lo tien to jbroot
+          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless \
             ADDITIONAL_CFLAGS="-Wno-error" ADDITIONAL_OBJCFLAGS="-Wno-error"
 
-      - name: 5. Dong goi thu cong kem trollstorehelper va postinst
-        run: |
-          rm -rf deb_rootless && mkdir -p deb_rootless/DEBIAN
-          mkdir -p deb_rootless/var/jb/Applications/TrollStoreLite.app
-
-          COMPILED_APP=$(find "$TS_LITE_DIR/.theos/obj" -type d -name "TrollStoreLite.app" | head -n 1)
-          cp -r "$COMPILED_APP/"* deb_rootless/var/jb/Applications/TrollStoreLite.app/
-
-          cp official_extracted/TrollStore.app/trollstorehelper deb_rootless/var/jb/Applications/TrollStoreLite.app/
-          chmod 755 deb_rootless/var/jb/Applications/TrollStoreLite.app/trollstorehelper
-
-          cp "$TS_LITE_DIR/control" deb_rootless/DEBIAN/control
-
-          printf '#!/bin/sh\nHELPER="/var/jb/Applications/TrollStoreLite.app/trollstorehelper"\nif [ -f "$HELPER" ]; then\n    chown root:wheel "$HELPER"\n    chmod 4755 "$HELPER"\nfi\nuicache -p /var/jb/Applications/TrollStoreLite.app 2>/dev/null || true\nexit 0\n' > deb_rootless/DEBIAN/postinst
-          chmod 755 deb_rootless/DEBIAN/postinst
-
-          mkdir -p packages
-          dpkg-deb -Zxz --root-owner-group -b deb_rootless packages/com.opa334.trollstorelite_2.1.1_iphoneos-arm64.deb
-
+          echo "=== Kiem tra file DEB vua tao ==="
           ls -lh packages/
 
-      - name: 6. Luu file DEB thanh pham
+      - name: 5. Luu file DEB thanh pham
         uses: actions/upload-artifact@v4
         with:
           name: TrollStoreLite-Rootless-DEB
-          path: "packages/*.deb"
+          path: "${{ env.TS_LITE_DIR }}/packages/*.deb"
