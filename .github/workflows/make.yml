@@ -1,0 +1,31 @@
+name: Make TrollStore 
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-13
+
+    steps:
+      - name: Cai dat Theos
+        uses: actions/setup-theos@v1
+
+      - name: Tai file zip va giai nen
+        run: |
+          curl -L -o source.zip "https://github.com/Jailbreak-roothide/T4MJBRoothide/releases/download/v2.0/TrollStore-2.1.1vn.zip"
+          unzip source.zip
+          SRC_DIR=$(find . -maxdepth 3 -name "Makefile" -exec dirname {} \; | head -n 1)
+          echo "SRC_DIR=$SRC_DIR" >> $GITHUB_ENV
+
+      - name: Chay lenh make package
+        run: |
+          cd $SRC_DIR
+          make clean
+          make package FINALPACKAGE=1
+
+      - name: Xuat file TrollStore Tieng Viet
+        uses: actions/upload-artifact@v4
+        with:
+          name: TrollStore-VietNam
+          path: "**/packages/*.tar"
