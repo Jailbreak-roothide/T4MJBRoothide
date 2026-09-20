@@ -3,21 +3,23 @@ name: Tạo TrollStore cho macOS
 on:
   workflow_dispatch:
 
-permissions:
-  contents: read
-
 jobs:
   build:
     name: Xây dựng TrollStore Tiếng Việt
     runs-on: macos-latest
 
     steps:
-      - name: 1. Cai dat Theos truc tiep
+      - name: 1. Lay truc tiep ma nguon tu kho luu tru
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: 2. Cai dat Theos truc tiep
         run: |
           git clone --recursive https://github.com/theos/theos.git ~/theos
           echo "THEOS=$HOME/theos" >> $GITHUB_ENV
 
-      - name: 2. Cai dat iOS 16.5 SDK
+      - name: 3. Cai dat iOS 16.5 SDK
         run: |
           git clone --quiet -n --depth=1 --filter=tree:0 https://github.com/theos/sdks.git ~/theos/sdks-tmp
           cd ~/theos/sdks-tmp
@@ -26,18 +28,9 @@ jobs:
           mv iPhoneOS16.5.sdk ~/theos/sdks/
           rm -rf ~/theos/sdks-tmp
 
-      - name: 3. Tai ma nguon TrollStore tu Release v2.0
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release view v2.0 -R Jailbreak-roothide/T4MJBRoothide
-          gh release download v2.0 -p "*.zip" -R Jailbreak-roothide/T4MJBRoothide -O source.zip
-          unzip source.zip
-          SRC_DIR=$(find . -maxdepth 3 -name "Makefile" -exec dirname {} \; | head -n 1)
-          echo "SRC_DIR=$SRC_DIR" >> $GITHUB_ENV
-
       - name: 4. Chay bien dich TrollStore
         run: |
+          SRC_DIR=$(find . -maxdepth 3 -name "Makefile" -exec dirname {} \; | head -n 1)
           cd $SRC_DIR
           export THEOS=$HOME/theos
           make clean
