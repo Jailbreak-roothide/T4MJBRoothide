@@ -1,44 +1,34 @@
-name: Hãy tạo nên TrollStore
+name: Make TrollStore macOS
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    name: xây dựng
-    runs-on: macos-13
+    name: Build TrollStore Tieng Viet
+    runs-on: macos-latest
 
     steps:
-      - name: 1. Cai dat Theos truc tiep bang lenh
-        run: |
-          git clone --recursive https://github.com/theos/theos.git ~/theos
-          echo "THEOS=$HOME/theos" >> $GITHUB_ENV
+      - name: 1. Cai dat Theos
+        uses: actions/setup-theos@v1
 
-      - name: 2. Cai dat iOS 16.5 SDK cho Theos
-        run: |
-          git clone --quiet -n --depth=1 --filter=tree:0 https://github.com/theos/sdks.git ~/theos/sdks-tmp
-          cd ~/theos/sdks-tmp
-          git sparse-checkout set --no-cone iPhoneOS16.5.sdk
-          git checkout
-          mv iPhoneOS16.5.sdk ~/theos/sdks/
-          rm -rf ~/theos/sdks-tmp
-
-      - name: 3. Tai file zip ma nguon tu Release v2.0
+      - name: 2. Tai code TrollStore tu Release v2.0
         run: |
           curl -L -o source.zip "https://github.com/Jailbreak-roothide/T4MJBRoothide/releases/download/v2.0/TrollStore-2.1.1vn.zip"
           unzip source.zip
           SRC_DIR=$(find . -maxdepth 3 -name "Makefile" -exec dirname {} \; | head -n 1)
           echo "SRC_DIR=$SRC_DIR" >> $GITHUB_ENV
 
-      - name: 4. Chay lenh bien dich TrollStore
+      - name: 3. Chay lenh make
         run: |
           cd $SRC_DIR
-          export THEOS=$HOME/theos
           make clean
-          make package FINALPACKAGE=1
+          make FINALPACKAGE=1
 
-      - name: 5. Xuat file cai dat
+      - name: 4. Xuat file TrollStore.tar
         uses: actions/upload-artifact@v4
         with:
-          name: TrollStore-Lite
-          path: "**/packages/*.tar"
+          name: TrollStore-VietNam
+          path: |
+            **/TrollStore.tar
+            **/packages/*.tar
