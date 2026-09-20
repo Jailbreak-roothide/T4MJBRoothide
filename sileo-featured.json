@@ -1,18 +1,35 @@
 {
   "class": "SileoFeaturedView",
   "version": "1.0",
-  "name": "T4MJB Repo",
+  "name": "T4MJB Roothide",
   "sections": [
     {
       "class": "FeaturedBannersView",
       "itemSize": "{320, 160}",
-      "itemCornerRadius": 10,
+      "itemCornerRadius": 12,
       "banners": [
         {
-          "title": "Chao mung den voi T4MJB",
-          "subtitle": "Kho Tweak & Ứng dung",
-          "image": "https://raw.githubusercontent.com/duoivai28-ship-it/T4MJB/main/banner.png"
+          "title": "RainMHz CPU Tiếng Việt",
+          "subtitle": "Tối ưu hóa CPU & Ổn định FPS",
+          "package": "com.rain.rainmhz",
+          "image": "https://raw.githubusercontent.com/Jailbreak-roothide/T4MJBRoothide/main/banner.png",
+          "hideShadow": false
+        },
+        {
+          "title": "ReProvision Reborn",
+          "subtitle": "Tự động ký lại chứng chỉ app",
+          "package": "com.reprovision.again",
+          "image": "https://raw.githubusercontent.com/Jailbreak-roothide/T4MJBRoothide/main/banner.png",
+          "hideShadow": false
         }
+      ]
+    },
+    {
+      "class": "PackageListBannerView",
+      "title": "Tweak Nổi Bật",
+      "packages": [
+        "com.rain.rainmhz",
+        "com.reprovision.again"
       ]
     }
   ]
