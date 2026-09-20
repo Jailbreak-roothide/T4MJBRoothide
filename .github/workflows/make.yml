@@ -23,12 +23,14 @@ jobs:
           mv iPhoneOS16.5.sdk ~/theos/sdks/
           rm -rf ~/theos/sdks-tmp
 
-      - name: 3. Giai nen ma nguon va tai cong cu ky CoreTrust
+      - name: 3. Giai nen ma nguon va cai dat dependencies
         run: |
-          brew install unar libarchive ldid
+          brew install unar libarchive ldid openssl@3
           curl -L -o source.rar "https://github.com/Jailbreak-roothide/T4MJBRoothide/releases/download/v2.0/TrollStore-2.1.1vn.rar"
           unar -o src_extracted source.rar
           
+          ROOT_DIR=$(find src_extracted -type d -name "RootHelper" -exec dirname {} \; | head -n 1)
+          echo "ROOT_DIR=$ROOT_DIR" >> $GITHUB_ENV
           TS_APP_DIR=$(find src_extracted -type d -name "TrollStore" | head -n 1)
           echo "TS_APP_DIR=$TS_APP_DIR" >> $GITHUB_ENV
 
@@ -42,45 +44,66 @@ jobs:
           mkdir -p official_extracted
           tar -xvf official.tar -C official_extracted/
 
-          # Lay chung chi goc tu TrollStore de ky CoreTrust
-          curl -L -o cert.p12 "https://raw.githubusercontent.com/opa334/TrollStore/main/Victim/victim.p12" || true
+      - name: 4. Bien dich fastPathSign voi day du thu vien OpenSSL & ChOma
+        run: |
+          OPENSSL_PREFIX=$(brew --prefix openssl@3)
+          cd "$ROOT_DIR"
+          
+          # Clone dung ban ChOma tuong thich
+          rm -rf ChOma
+          git clone --recursive https://github.com/opa334/ChOma.git
+          
+          # Fix case-sensitivity Fat.h -> FAT.h neu co
+          find . -name "main.m" -exec sed -i '' 's/"Fat.h"/"FAT.h"/g' {} + 2>/dev/null || true
 
-      - name: 4. Bien dich ma nguon Tieng Viet va Ky chuan CoreTrust
+          cd Exploits/fastPathSign
+          clang -O3 -fobjc-arc \
+            -framework Foundation -framework CoreServices -framework Security \
+            -I../../ChOma/src \
+            -I"$OPENSSL_PREFIX/include" \
+            -L"$OPENSSL_PREFIX/lib" -lcrypto \
+            ../../ChOma/src/*.c \
+            src/main.m src/codesign.m src/coretrust_bug.c \
+            -o fastPathSign
+          
+          chmod 755 fastPathSign
+          echo "Da build fastPathSign thanh cong!"
+
+      - name: 5. Bien dich TrollStore va ky bypass CoreTrust
         run: |
           export THEOS=$HOME/theos
           WORKSPACE_DIR=$(pwd)
           cd "$WORKSPACE_DIR/$TS_APP_DIR"
 
-          # 1. Bien dich code Tieng Viet sang file nhi phan arm64
+          # 1. Bien dich app TrollStore (Theos se tu dong goi fastPathSign da build o tren)
           make clean || true
-          make FINALPACKAGE=1 ADDITIONAL_CFLAGS="-Wno-error" ADDITIONAL_OBJCFLAGS="-Wno-error" || true
+          make FINALPACKAGE=1 ADDITIONAL_CFLAGS="-Wno-error" ADDITIONAL_OBJCFLAGS="-Wno-error"
 
-          # 2. Dong goi app
+          # 2. Chuan bi goi thanh pham
           cd "$WORKSPACE_DIR"
           rm -rf package_dir && mkdir -p package_dir
-          cp -r official_extracted/TrollStore.app package_dir/
-
-          # 3. Thay the file thuc thi TrollStore bang file Tieng Viet vua build
-          COMPILED_BIN=$(find "$TS_APP_DIR/.theos/obj" -type f -name "TrollStore" | head -n 1)
-          if [ -n "$COMPILED_BIN" ]; then
-            echo "Tim thay file nhi phan TrollStore Tieng Viet tai: $COMPILED_BIN"
-            cp "$COMPILED_BIN" package_dir/TrollStore.app/TrollStore
+          
+          # Neu Theos build ra TrollStore.app day du thi copy
+          if [ -d "$TS_APP_DIR/.theos/obj/TrollStore.app" ]; then
+            cp -r "$TS_APP_DIR/.theos/obj/TrollStore.app" package_dir/
+          else
+            cp -r official_extracted/TrollStore.app package_dir/
+            cp "$TS_APP_DIR/.theos/obj/arm64/TrollStore.app/TrollStore" package_dir/TrollStore.app/
+            "$ROOT_DIR/Exploits/fastPathSign/fastPathSign" package_dir/TrollStore.app/TrollStore "$TS_APP_DIR/entitlements.plist"
           fi
 
-          # 4. Trich xuat entitlement chuan tu file goc va ky bang ldid
-          ldid -e official_extracted/TrollStore.app/TrollStore > entitlements.plist
-          ldid -Sentitlements.plist package_dir/TrollStore.app/TrollStore
-          ldid -Sentitlements.plist package_dir/TrollStore.app/trollstorehelper
-
-          chmod 755 package_dir/TrollStore.app/TrollStore
+          # 3. Copy helper goc vao TrollStore.app
+          cp official_extracted/TrollStore.app/trollstorehelper package_dir/TrollStore.app/
+          cp official_extracted/TrollStore.app/PersistenceHelper package_dir/TrollStore.app/ 2>/dev/null || true
           chmod 755 package_dir/TrollStore.app/trollstorehelper
+          chmod 755 package_dir/TrollStore.app/TrollStore
 
-          # 5. Tao file tar
+          # 4. Dong goi tar
           cd package_dir
           tar -cvf ../TrollStore.tar TrollStore.app
           cd ..
 
-      - name: 5. Luu file thanh pham TrollStore.tar
+      - name: 6. Luu file thanh pham TrollStore.tar
         uses: actions/upload-artifact@v4
         with:
           name: TrollStore-VietNam
