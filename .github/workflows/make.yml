@@ -1,15 +1,15 @@
-name: Tạo TrollStore Lite Rootless DEB
+name: Tao TrollStore Lite Rootless DEB
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    name: Xây dựng TrollStore Lite Rootless Tiếng Việt (.deb)
+    name: Build TrollStore Lite Rootless (.deb)
     runs-on: macos-latest
 
     steps:
-      - name: 1. Cai dat Theos truc tiep
+      - name: 1. Cai dat Theos
         run: |
           git clone --recursive https://github.com/theos/theos.git ~/theos
           echo "THEOS=$HOME/theos" >> $GITHUB_ENV
@@ -31,7 +31,7 @@ jobs:
 
           curl -L -o source.rar "https://github.com/Jailbreak-roothide/T4MJBRoothide/releases/download/v2.0/TrollStore-2.1.1vn.rar"
           unar -o src_extracted source.rar
-          
+
           ROOT_DIR=$(find src_extracted -type d -name "RootHelper" -exec dirname {} \; | head -n 1)
           TS_APP_DIR=$(find src_extracted -type d -name "TrollStore" | head -n 1)
           TS_LITE_DIR=$(find src_extracted -type d -name "TrollStoreLite" | head -n 1)
@@ -39,7 +39,6 @@ jobs:
           echo "TS_APP_DIR=$TS_APP_DIR" >> $GITHUB_ENV
           echo "TS_LITE_DIR=$TS_LITE_DIR" >> $GITHUB_ENV
 
-          # Header archive
           LIBARCHIVE_PREFIX=$(brew --prefix libarchive)
           mkdir -p $THEOS/include
           cp "$LIBARCHIVE_PREFIX/include/archive.h" $THEOS/include/
@@ -47,13 +46,11 @@ jobs:
           cp "$LIBARCHIVE_PREFIX/include/archive.h" "$TS_LITE_DIR/" 2>/dev/null || true
           cp "$LIBARCHIVE_PREFIX/include/archive_entry.h" "$TS_LITE_DIR/" 2>/dev/null || true
 
-          # Dong bo toan bo thu muc tai nguyen va anh wallpaper.png tu TrollStore sang TrollStoreLite
           mkdir -p "$TS_LITE_DIR/Resources"
           if [ -d "$TS_APP_DIR/Resources" ]; then
             cp -r "$TS_APP_DIR/Resources/"* "$TS_LITE_DIR/Resources/" 2>/dev/null || true
           fi
 
-          # Tai TrollStore 2.1.1 goc de lay trollstorehelper da ky quyen root san
           curl -L -o official.tar "https://github.com/opa334/TrollStore/releases/download/2.1.1/TrollStore.tar"
           mkdir -p official_extracted
           tar -xvf official.tar -C official_extracted/
@@ -69,23 +66,17 @@ jobs:
 
       - name: 5. Dong goi thu cong kem trollstorehelper va postinst
         run: |
-          WORKSPACE_DIR=$(pwd)
-          
-          # 1. Tao khung thu muc rootless chuan cho dpkg
           rm -rf deb_rootless && mkdir -p deb_rootless/DEBIAN
           mkdir -p deb_rootless/var/jb/Applications/TrollStoreLite.app
 
-          # 2. Copy toan bo app vua bien dich
           COMPILED_APP=$(find "$TS_LITE_DIR/.theos/obj" -type d -name "TrollStoreLite.app" | head -n 1)
           cp -r "$COMPILED_APP/"* deb_rootless/var/jb/Applications/TrollStoreLite.app/
 
-          # 3. Nhet trollstorehelper vao bundle va cap quyen thuc thi
           cp official_extracted/TrollStore.app/trollstorehelper deb_rootless/var/jb/Applications/TrollStoreLite.app/
           chmod 755 deb_rootless/var/jb/Applications/TrollStoreLite.app/trollstorehelper
 
-          # 4. Copy control va tao script postinst de setuid root khi cai qua Sileo
           cp "$TS_LITE_DIR/control" deb_rootless/DEBIAN/control
-          
+
           cat << 'EOF' > deb_rootless/DEBIAN/postinst
 #!/bin/sh
 HELPER="/var/jb/Applications/TrollStoreLite.app/trollstorehelper"
@@ -98,11 +89,9 @@ exit 0
 EOF
           chmod 755 deb_rootless/DEBIAN/postinst
 
-          # 5. Dong goi ra file .deb Rootless
           mkdir -p packages
           dpkg-deb -Zxz --root-owner-group -b deb_rootless packages/com.opa334.trollstorelite_2.1.1_iphoneos-arm64.deb
 
-          echo "=== Goi DEB Rootless da dong goi thanh cong ==="
           ls -lh packages/
 
       - name: 6. Luu file DEB thanh pham
