@@ -3,23 +3,21 @@ name: Tạo TrollStore cho macOS
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     name: Xây dựng TrollStore Tiếng Việt
     runs-on: macos-latest
 
     steps:
-      - name: 1. Lay truc tiep ma nguon tu kho luu tru
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: 2. Cai dat Theos truc tiep
+      - name: 1. Cai dat Theos truc tiep
         run: |
           git clone --recursive https://github.com/theos/theos.git ~/theos
           echo "THEOS=$HOME/theos" >> $GITHUB_ENV
 
-      - name: 3. Cai dat iOS 16.5 SDK
+      - name: 2. Cai dat iOS 16.5 SDK
         run: |
           git clone --quiet -n --depth=1 --filter=tree:0 https://github.com/theos/sdks.git ~/theos/sdks-tmp
           cd ~/theos/sdks-tmp
@@ -28,13 +26,25 @@ jobs:
           mv iPhoneOS16.5.sdk ~/theos/sdks/
           rm -rf ~/theos/sdks-tmp
 
+      - name: 3. Tai toan bo file tu Release v2.0 va giai nen
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Tai toan bo file dinh kem trong Release v2.0
+          gh release download v2.0 -R Jailbreak-roothide/T4MJBRoothide --dir release_files
+          
+          # Tim va giai nen bat ky file zip nao tim thay
+          find release_files -name "*.zip" -exec unzip -o {} \;
+
+          # Tim thu muc chua Makefile tong cua TrollStore (thu muc co chua thu muc TrollStore va RootHelper)
+          TARGET_DIR=$(find . -type d -name "RootHelper" -exec dirname {} \; | head -n 1)
+          echo "TARGET_DIR=$TARGET_DIR" >> $GITHUB_ENV
+          echo "Da tim thay thu muc ma nguon tai: $TARGET_DIR"
+
       - name: 4. Chay bien dich TrollStore
         run: |
+          cd $TARGET_DIR
           export THEOS=$HOME/theos
-          # Neu code nam trong thu muc con TrollStore-2.1.1 thi vao, khong thi dung tai goc
-          if [ -f "TrollStore-2.1.1/Makefile" ]; then
-            cd TrollStore-2.1.1
-          fi
           make clean || true
           make FINALPACKAGE=1
 
