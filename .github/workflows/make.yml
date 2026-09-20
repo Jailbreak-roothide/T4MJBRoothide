@@ -2,6 +2,9 @@ name: Tao TrollStore Lite Rootless DEB
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
 
 jobs:
   build:
@@ -77,16 +80,7 @@ jobs:
 
           cp "$TS_LITE_DIR/control" deb_rootless/DEBIAN/control
 
-          cat << 'EOF' > deb_rootless/DEBIAN/postinst
-#!/bin/sh
-HELPER="/var/jb/Applications/TrollStoreLite.app/trollstorehelper"
-if [ -f "$HELPER" ]; then
-    chown root:wheel "$HELPER"
-    chmod 4755 "$HELPER"
-fi
-uicache -p /var/jb/Applications/TrollStoreLite.app 2>/dev/null || true
-exit 0
-EOF
+          printf '#!/bin/sh\nHELPER="/var/jb/Applications/TrollStoreLite.app/trollstorehelper"\nif [ -f "$HELPER" ]; then\n    chown root:wheel "$HELPER"\n    chmod 4755 "$HELPER"\nfi\nuicache -p /var/jb/Applications/TrollStoreLite.app 2>/dev/null || true\nexit 0\n' > deb_rootless/DEBIAN/postinst
           chmod 755 deb_rootless/DEBIAN/postinst
 
           mkdir -p packages
