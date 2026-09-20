@@ -23,9 +23,9 @@ jobs:
           mv iPhoneOS16.5.sdk ~/theos/sdks/
           rm -rf ~/theos/sdks-tmp
 
-      - name: 3. Giai nen ma nguon va cai dat thu vien
+      - name: 3. Giai nen ma nguon va chuan bi thu vien
         run: |
-          brew install unar libarchive ldid openssl@3
+          brew install unar libarchive ldid openssl@3 dpkg
           OPENSSL_PREFIX=$(brew --prefix openssl@3)
           echo "DYLD_LIBRARY_PATH=$OPENSSL_PREFIX/lib:$DYLD_LIBRARY_PATH" >> $GITHUB_ENV
 
@@ -33,58 +33,71 @@ jobs:
           unar -o src_extracted source.rar
           
           ROOT_DIR=$(find src_extracted -type d -name "RootHelper" -exec dirname {} \; | head -n 1)
-          echo "ROOT_DIR=$ROOT_DIR" >> $GITHUB_ENV
           TS_LITE_DIR=$(find src_extracted -type d -name "TrollStoreLite" | head -n 1)
+          echo "ROOT_DIR=$ROOT_DIR" >> $GITHUB_ENV
           echo "TS_LITE_DIR=$TS_LITE_DIR" >> $GITHUB_ENV
 
-          # Chen header archive vao Theos de khong bi loi thieu header
+          # Header archive
           LIBARCHIVE_PREFIX=$(brew --prefix libarchive)
           mkdir -p $THEOS/include
           cp "$LIBARCHIVE_PREFIX/include/archive.h" $THEOS/include/
           cp "$LIBARCHIVE_PREFIX/include/archive_entry.h" $THEOS/include/
-          cp "$LIBARCHIVE_PREFIX/include/archive.h" "$TS_LITE_DIR/" 2>/dev/null || true
-          cp "$LIBARCHIVE_PREFIX/include/archive_entry.h" "$TS_LITE_DIR/" 2>/dev/null || true
 
-      - name: 4. Chuan bi fastPathSign
-        run: |
-          OPENSSL_PREFIX=$(brew --prefix openssl@3)
-          git clone --depth 1 --branch 2.1.1 https://github.com/opa334/TrollStore.git ts_official
-          cd ts_official
-          git submodule update --init --recursive
-          cd Exploits/fastPathSign
-          sed -i '' 's/"Fat.h"/"FAT.h"/g' src/main.m 2>/dev/null || true
-          
-          clang -O3 -fobjc-arc \
-            -framework Foundation -framework CoreServices -framework Security \
-            -I../../ChOma/src \
-            -I"$OPENSSL_PREFIX/include" \
-            -L"$OPENSSL_PREFIX/lib" -lcrypto \
-            ../../ChOma/src/*.c \
-            src/main.m src/codesign.m src/coretrust_bug.c \
-            -o fastPathSign
-          
-          chmod 755 fastPathSign
-          cd ../../..
-          mkdir -p "$ROOT_DIR/Exploits/fastPathSign"
-          cp ts_official/Exploits/fastPathSign/fastPathSign "$ROOT_DIR/Exploits/fastPathSign/fastPathSign"
-          chmod 755 "$ROOT_DIR/Exploits/fastPathSign/fastPathSign"
+          # Tai TrollStore 2.1.1 goc de lay trollstorehelper da ky quyen root san
+          curl -L -o official.tar "https://github.com/opa334/TrollStore/releases/download/2.1.1/TrollStore.tar"
+          mkdir -p official_extracted
+          tar -xvf official.tar -C official_extracted/
 
-      - name: 5. Bien dich TrollStore Lite chuan Rootless (iphoneos-arm64)
+      - name: 4. Bien dich TrollStore Lite
         run: |
           export THEOS=$HOME/theos
           cd "$TS_LITE_DIR"
 
           make clean || true
-
-          # THEOS_PACKAGE_SCHEME=rootless se bien dich sang kien truc iphoneos-arm64 va dua vao /var/jb/
-          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless \
+          # Chi bien dich app, chua dong goi voi make package de tu nhet helper vao
+          make FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless \
             ADDITIONAL_CFLAGS="-Wno-error" ADDITIONAL_OBJCFLAGS="-Wno-error"
 
-          echo "=== Danh sach file DEB Rootless da tao ==="
+      - name: 5. Dong goi thu cong kem trollstorehelper va postinst
+        run: |
+          WORKSPACE_DIR=$(pwd)
+          
+          # 1. Tao khung thu muc rootless chuan cho dpkg
+          rm -rf deb_rootless && mkdir -p deb_rootless/DEBIAN
+          mkdir -p deb_rootless/var/jb/Applications/TrollStoreLite.app
+
+          # 2. Copy toan bo file app vua duoc bien dich
+          COMPILED_APP=$(find "$TS_LITE_DIR/.theos/obj" -type d -name "TrollStoreLite.app" | head -n 1)
+          cp -r "$COMPILED_APP/"* deb_rootless/var/jb/Applications/TrollStoreLite.app/
+
+          # 3. Nhet trollstorehelper goc vao bundle (Thieu cai nay la khong the cai IPA)
+          cp official_extracted/TrollStore.app/trollstorehelper deb_rootless/var/jb/Applications/TrollStoreLite.app/
+          chmod 755 deb_rootless/var/jb/Applications/TrollStoreLite.app/trollstorehelper
+
+          # 4. Copy control va tao script postinst de setuid root khi cai qua Sileo
+          cp "$TS_LITE_DIR/control" deb_rootless/DEBIAN/control
+          
+          cat << 'EOF' > deb_rootless/DEBIAN/postinst
+#!/bin/sh
+HELPER="/var/jb/Applications/TrollStoreLite.app/trollstorehelper"
+if [ -f "$HELPER" ]; then
+    chown root:wheel "$HELPER"
+    chmod 4755 "$HELPER"
+fi
+uicache -p /var/jb/Applications/TrollStoreLite.app 2>/dev/null || true
+exit 0
+EOF
+          chmod 755 deb_rootless/DEBIAN/postinst
+
+          # 5. Dong goi ra file .deb Rootless
+          mkdir -p packages
+          dpkg-deb -Zxz --root-owner-group -b deb_rootless packages/com.opa334.trollstorelite_2.1.1_iphoneos-arm64.deb
+
+          echo "=== Goi DEB Rootless da dong goi thanh cong ==="
           ls -lh packages/
 
       - name: 6. Luu file DEB thanh pham
         uses: actions/upload-artifact@v4
         with:
           name: TrollStoreLite-Rootless-DEB
-          path: "**/packages/*.deb"
+          path: "packages/*.deb"
