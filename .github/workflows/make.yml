@@ -1,11 +1,11 @@
-name: Tạo TrollStore Lite DEB
+name: Tạo TrollStore Lite Rootless DEB
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    name: Xây dựng TrollStore Lite Tiếng Việt (Icon Trắng)
+    name: Xây dựng TrollStore Lite Rootless Tiếng Việt (.deb)
     runs-on: macos-latest
 
     steps:
@@ -37,7 +37,7 @@ jobs:
           TS_LITE_DIR=$(find src_extracted -type d -name "TrollStoreLite" | head -n 1)
           echo "TS_LITE_DIR=$TS_LITE_DIR" >> $GITHUB_ENV
 
-          # Chen header archive vao Theos de khi TrollStoreLite bien dich .m khong bao gio thieu
+          # Chen header archive vao Theos de khong bi loi thieu header
           LIBARCHIVE_PREFIX=$(brew --prefix libarchive)
           mkdir -p $THEOS/include
           cp "$LIBARCHIVE_PREFIX/include/archive.h" $THEOS/include/
@@ -45,7 +45,7 @@ jobs:
           cp "$LIBARCHIVE_PREFIX/include/archive.h" "$TS_LITE_DIR/" 2>/dev/null || true
           cp "$LIBARCHIVE_PREFIX/include/archive_entry.h" "$TS_LITE_DIR/" 2>/dev/null || true
 
-      - name: 4. Chuan bi fastPathSign phong khi Theos can
+      - name: 4. Chuan bi fastPathSign
         run: |
           OPENSSL_PREFIX=$(brew --prefix openssl@3)
           git clone --depth 1 --branch 2.1.1 https://github.com/opa334/TrollStore.git ts_official
@@ -69,20 +69,22 @@ jobs:
           cp ts_official/Exploits/fastPathSign/fastPathSign "$ROOT_DIR/Exploits/fastPathSign/fastPathSign"
           chmod 755 "$ROOT_DIR/Exploits/fastPathSign/fastPathSign"
 
-      - name: 5. Bien dich TrollStore Lite (Icon trang) va Dong goi DEB
+      - name: 5. Bien dich TrollStore Lite chuan Rootless (iphoneos-arm64)
         run: |
           export THEOS=$HOME/theos
           cd "$TS_LITE_DIR"
 
           make clean || true
-          # Chay dung muc tieu TrollStoreLite de dong goi app icon trang
-          make package FINALPACKAGE=1 ADDITIONAL_CFLAGS="-Wno-error" ADDITIONAL_OBJCFLAGS="-Wno-error"
 
-          echo "=== Danh sach file DEB TrollStore Lite ==="
+          # THEOS_PACKAGE_SCHEME=rootless se bien dich sang kien truc iphoneos-arm64 va dua vao /var/jb/
+          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless \
+            ADDITIONAL_CFLAGS="-Wno-error" ADDITIONAL_OBJCFLAGS="-Wno-error"
+
+          echo "=== Danh sach file DEB Rootless da tao ==="
           ls -lh packages/
 
       - name: 6. Luu file DEB thanh pham
         uses: actions/upload-artifact@v4
         with:
-          name: TrollStoreLite-White-DEB
+          name: TrollStoreLite-Rootless-DEB
           path: "**/packages/*.deb"
