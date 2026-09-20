@@ -9,48 +9,73 @@ jobs:
     runs-on: macos-latest
 
     steps:
-      - name: 1. Cai dat cong cu giai nen
-        run: brew install unar
-
-      - name: 2. Tai ma nguon Tieng Viet va TrollStore goc
+      - name: 1. Cai dat Theos truc tiep
         run: |
-          # 1. Giai nen goi nguon cua ban
+          git clone --recursive https://github.com/theos/theos.git ~/theos
+          echo "THEOS=$HOME/theos" >> $GITHUB_ENV
+
+      - name: 2. Cai dat iOS 16.5 SDK
+        run: |
+          git clone --quiet -n --depth=1 --filter=tree:0 https://github.com/theos/sdks.git ~/theos/sdks-tmp
+          cd ~/theos/sdks-tmp
+          git sparse-checkout set --no-cone iPhoneOS16.5.sdk
+          git checkout
+          mv iPhoneOS16.5.sdk ~/theos/sdks/
+          rm -rf ~/theos/sdks-tmp
+
+      - name: 3. Giai nen ma nguon va tai cong cu ky CoreTrust
+        run: |
+          brew install unar libarchive ldid
           curl -L -o source.rar "https://github.com/Jailbreak-roothide/T4MJBRoothide/releases/download/v2.0/TrollStore-2.1.1vn.rar"
           unar -o src_extracted source.rar
-
-          # 2. Tai ban goc TrollStore 2.1.1 chua chu ky CoreTrust chuan
-          curl -L -o official.tar "https://github.com/opa334/TrollStore/releases/download/2.1.1/TrollStore.tar"
-          mkdir -p package_dir
-          tar -xvf official.tar -C package_dir/
-
-      - name: 3. Dong bo va chuan hoa toan bo ban dich Tieng Viet
-        run: |
-          # Tim thu muc chua ban dich Tieng Viet
-          VI_DIR=$(find src_extracted -type d -name "vi.lproj" | head -n 1)
           
-          if [ -d "$VI_DIR" ]; then
-            echo "Tim thay thu muc ngon ngu Tieng Viet tai: $VI_DIR"
-            
-            # Kiem tra va convert tat ca file .strings sang UTF-8 chuan Apple
-            find "$VI_DIR" -name "*.strings" -exec plutil -lint {} \; || true
-            
-            # Chep thu muc tieng Viet vao app
-            cp -r "$VI_DIR" package_dir/TrollStore.app/
-            
-            # Chep de them vao Base.lproj de may dat tieng Anh van hien Tieng Viet
-            cp -r "$VI_DIR/"* package_dir/TrollStore.app/Base.lproj/ 2>/dev/null || true
+          TS_APP_DIR=$(find src_extracted -type d -name "TrollStore" | head -n 1)
+          echo "TS_APP_DIR=$TS_APP_DIR" >> $GITHUB_ENV
+
+          # Header libarchive
+          LIBARCHIVE_PREFIX=$(brew --prefix libarchive)
+          cp "$LIBARCHIVE_PREFIX/include/archive.h" "$TS_APP_DIR/"
+          cp "$LIBARCHIVE_PREFIX/include/archive_entry.h" "$TS_APP_DIR/"
+
+          # Tai TrollStore 2.1.1 goc
+          curl -L -o official.tar "https://github.com/opa334/TrollStore/releases/download/2.1.1/TrollStore.tar"
+          mkdir -p official_extracted
+          tar -xvf official.tar -C official_extracted/
+
+          # Lay chung chi goc tu TrollStore de ky CoreTrust
+          curl -L -o cert.p12 "https://raw.githubusercontent.com/opa334/TrollStore/main/Victim/victim.p12" || true
+
+      - name: 4. Bien dich ma nguon Tieng Viet va Ky chuan CoreTrust
+        run: |
+          export THEOS=$HOME/theos
+          WORKSPACE_DIR=$(pwd)
+          cd "$WORKSPACE_DIR/$TS_APP_DIR"
+
+          # 1. Bien dich code Tieng Viet sang file nhi phan arm64
+          make clean || true
+          make FINALPACKAGE=1 ADDITIONAL_CFLAGS="-Wno-error" ADDITIONAL_OBJCFLAGS="-Wno-error" || true
+
+          # 2. Dong goi app
+          cd "$WORKSPACE_DIR"
+          rm -rf package_dir && mkdir -p package_dir
+          cp -r official_extracted/TrollStore.app package_dir/
+
+          # 3. Thay the file thuc thi TrollStore bang file Tieng Viet vua build
+          COMPILED_BIN=$(find "$TS_APP_DIR/.theos/obj" -type f -name "TrollStore" | head -n 1)
+          if [ -n "$COMPILED_BIN" ]; then
+            echo "Tim thay file nhi phan TrollStore Tieng Viet tai: $COMPILED_BIN"
+            cp "$COMPILED_BIN" package_dir/TrollStore.app/TrollStore
           fi
 
-          # Chep cac file Localizable neu nam rieng le
-          find src_extracted -name "*Localizable*" -exec cp {} package_dir/TrollStore.app/ \; 2>/dev/null || true
+          # 4. Trich xuat entitlement chuan tu file goc va ky bang ldid
+          ldid -e official_extracted/TrollStore.app/TrollStore > entitlements.plist
+          ldid -Sentitlements.plist package_dir/TrollStore.app/TrollStore
+          ldid -Sentitlements.plist package_dir/TrollStore.app/trollstorehelper
 
-          # Dam bao quyen thuc thi cho file nhi phan
           chmod 755 package_dir/TrollStore.app/TrollStore
           chmod 755 package_dir/TrollStore.app/trollstorehelper
-          chmod 755 package_dir/TrollStore.app/PersistenceHelper 2>/dev/null || true
 
-      - name: 4. Dong goi thanh TrollStore.tar
-        run: |
+          # 5. Tao file tar
           cd package_dir
           tar -cvf ../TrollStore.tar TrollStore.app
           cd ..
