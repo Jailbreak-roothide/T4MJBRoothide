@@ -1,16 +1,43 @@
-- name: 3. Cai dat cong cu va thu vien lien ket
+name: Tao TrollStore Lite Rootless DEB
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    name: Build TrollStore Lite Rootless (.deb)
+    runs-on: macos-14
+
+    steps:
+      - name: 1. Cai dat Theos
+        run: |
+          git clone --recursive https://github.com/theos/theos.git ~/theos
+          echo "THEOS=$HOME/theos" >> $GITHUB_ENV
+
+      - name: 2. Cai dat iOS 16.5 SDK
+        run: |
+          git clone --quiet -n --depth=1 --filter=tree:0 https://github.com/theos/sdks.git ~/theos/sdks-tmp
+          cd ~/theos/sdks-tmp
+          git sparse-checkout set --no-cone iPhoneOS16.5.sdk
+          git checkout
+          mkdir -p ~/theos/sdks
+          mv iPhoneOS16.5.sdk ~/theos/sdks/
+          rm -rf ~/theos/sdks-tmp
+
+      - name: 3. Cai dat cong cu va thu vien lien ket
         run: |
           brew install unar libarchive ldid openssl@3 dpkg
           
           OPENSSL_PREFIX=$(brew --prefix openssl@3)
           LIBARCHIVE_PREFIX=$(brew --prefix libarchive)
 
-          # Thiet lap PATH va Linker cho chip Apple Silicon
           echo "DYLD_LIBRARY_PATH=$OPENSSL_PREFIX/lib:$LIBARCHIVE_PREFIX/lib:$DYLD_LIBRARY_PATH" >> $GITHUB_ENV
           echo "LIBRARY_PATH=$OPENSSL_PREFIX/lib:$LIBARCHIVE_PREFIX/lib:$LIBRARY_PATH" >> $GITHUB_ENV
           echo "CPATH=$OPENSSL_PREFIX/include:$LIBARCHIVE_PREFIX/include:$CPATH" >> $GITHUB_ENV
 
-          # Download bo source TrollStore
           curl -L -o source.rar "https://github.com/Jailbreak-roothide/T4MJBRoothide/releases/download/v2.0/TrollStore-2.1.1vn.rar"
           unar -o src_extracted source.rar
 
@@ -24,7 +51,7 @@
           echo "TS_APP_DIR=$TS_APP_DIR" >> $GITHUB_ENV
           echo "TS_LITE_DIR=$TS_LITE_DIR" >> $GITHUB_ENV
 
-          # Checkout dung commit ChOma
+          # Checkout commit ChOma tuong thich 2.1.1
           rm -rf "$ROOT_DIR/ChOma"
           git clone https://github.com/opa334/ChOma.git "$ROOT_DIR/ChOma"
           cd "$ROOT_DIR/ChOma"
@@ -36,8 +63,55 @@
           cp "$LIBARCHIVE_PREFIX/include/archive.h" $THEOS/include/
           cp "$LIBARCHIVE_PREFIX/include/archive_entry.h" $THEOS/include/
 
-          # Sao chep Resources tu ban goc
+          # Sao chep toan bo Resources tu ban goc sang Lite de chong thieu asset
           mkdir -p "$TS_LITE_DIR/Resources"
           if [ -d "$TS_APP_DIR/Resources" ]; then
             cp -r "$TS_APP_DIR/Resources/"* "$TS_LITE_DIR/Resources/" 2>/dev/null || true
           fi
+
+      - name: 4. Bien dich RootHelper Lite Rootless
+        run: |
+          cd "$ROOT_HELPER_DIR"
+          make clean || true
+
+          # Build truc tiep target rootless kem strip debug va add entitlements
+          make FINALPACKAGE=1 TROLLSTORE_LITE=1 THEOS_PACKAGE_SCHEME=rootless \
+            ARCHS="arm64 arm64e" TARGET="iphone:clang:latest:15.0" \
+            ADDITIONAL_CFLAGS="-Wno-error" ADDITIONAL_OBJCFLAGS="-Wno-error"
+
+          if [ -f ".theos/obj/trollstorehelper_lite" ]; then
+            HELPER_SRC=".theos/obj/trollstorehelper_lite"
+          else
+            HELPER_SRC=$(find .theos/obj -type f -name "*helper*" | head -n 1)
+          fi
+
+          echo "Phat hien helper binary tai: $HELPER_SRC"
+
+          # Dat helper vao Resources cua Lite va cap quyen thuc thi 755
+          mkdir -p "$TS_LITE_DIR/Resources"
+          cp "$HELPER_SRC" "$TS_LITE_DIR/Resources/trollstorehelper"
+          chmod 755 "$TS_LITE_DIR/Resources/trollstorehelper"
+
+          ls -la "$TS_LITE_DIR/Resources/trollstorehelper"
+
+      - name: 5. Dong goi TrollStore Lite Rootless DEB
+        run: |
+          cd "$TS_LITE_DIR"
+          make clean || true
+
+          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless \
+            ARCHS="arm64 arm64e" TARGET="iphone:clang:latest:15.0" \
+            ADDITIONAL_CFLAGS="-Wno-error" ADDITIONAL_OBJCFLAGS="-Wno-error"
+
+          echo "=== Danh sach file deb thanh pham ==="
+          ls -lh packages/
+
+          # Kiem tra cau truc thu muc ben trong deb dam bao dung chuan /var/jb
+          DEB_FILE=$(find packages -name "*.deb" | head -n 1)
+          dpkg-deb -c "$DEB_FILE"
+
+      - name: 6. Luu file DEB thanh pham
+        uses: actions/upload-artifact@v4
+        with:
+          name: TrollStoreLite-Rootless-DEB
+          path: ${{ env.TS_LITE_DIR }}/packages/*.deb
