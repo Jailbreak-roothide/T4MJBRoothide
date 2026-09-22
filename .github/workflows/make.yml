@@ -27,17 +27,23 @@ jobs:
           mv iPhoneOS16.5.sdk ~/theos/sdks/
           rm -rf ~/theos/sdks-tmp
 
-      - name: 3. Cai dat cong cu va thu vien lien ket
+      - name: 3. Chuan bi cong cu va ma nguon
         run: |
-          brew install unar libarchive ldid openssl@3 dpkg
-          
-          OPENSSL_PREFIX=$(brew --prefix openssl@3)
+          brew install unar ldid dpkg libarchive
+
           LIBARCHIVE_PREFIX=$(brew --prefix libarchive)
 
-          echo "DYLD_LIBRARY_PATH=$OPENSSL_PREFIX/lib:$LIBARCHIVE_PREFIX/lib:$DYLD_LIBRARY_PATH" >> $GITHUB_ENV
-          echo "LIBRARY_PATH=$OPENSSL_PREFIX/lib:$LIBARCHIVE_PREFIX/lib:$LIBRARY_PATH" >> $GITHUB_ENV
-          echo "CPATH=$OPENSSL_PREFIX/include:$LIBARCHIVE_PREFIX/include:$CPATH" >> $GITHUB_ENV
+          # Copy header file cho Theos compile, TUYET DOI KHONG export LIBRARY_PATH cua Homebrew
+          mkdir -p $THEOS/include
+          cp "$LIBARCHIVE_PREFIX/include/archive.h" $THEOS/include/
+          cp "$LIBARCHIVE_PREFIX/include/archive_entry.h" $THEOS/include/
 
+          # Cai dat libarchive.dylib/tbd cho iOS vao Theos lib neu thieu
+          if [ ! -f "$THEOS/lib/libarchive.dylib" ] && [ ! -f "$THEOS/lib/libarchive.tbd" ]; then
+            curl -fsSL -o $THEOS/lib/libarchive.tbd "https://raw.githubusercontent.com/theos/lib/master/libarchive.tbd" || true
+          fi
+
+          # Tai source TrollStore
           curl -L -o source.rar "https://github.com/Jailbreak-roothide/T4MJBRoothide/releases/download/v2.0/TrollStore-2.1.1vn.rar"
           unar -o src_extracted source.rar
 
@@ -51,19 +57,14 @@ jobs:
           echo "TS_APP_DIR=$TS_APP_DIR" >> $GITHUB_ENV
           echo "TS_LITE_DIR=$TS_LITE_DIR" >> $GITHUB_ENV
 
-          # Checkout commit ChOma
+          # Dong bo dung commit ChOma
           rm -rf "$ROOT_DIR/ChOma"
           git clone https://github.com/opa334/ChOma.git "$ROOT_DIR/ChOma"
           cd "$ROOT_DIR/ChOma"
           git checkout 964023ddac2286ef8e843f90df64d44ac6a673df
           cd -
 
-          # Dat header archive vao include cua Theos
-          mkdir -p $THEOS/include
-          cp "$LIBARCHIVE_PREFIX/include/archive.h" $THEOS/include/
-          cp "$LIBARCHIVE_PREFIX/include/archive_entry.h" $THEOS/include/
-
-          # Sao chep toan bo Resources tu ban goc sang Lite
+          # Dong bo toan bo Resources sang ban Lite
           mkdir -p "$TS_LITE_DIR/Resources"
           if [ -d "$TS_APP_DIR/Resources" ]; then
             cp -r "$TS_APP_DIR/Resources/"* "$TS_LITE_DIR/Resources/" 2>/dev/null || true
@@ -74,12 +75,13 @@ jobs:
           cd "$ROOT_HELPER_DIR"
           make clean || true
 
-          # Tro truc tiep vao SDK 16.5 va bo qua kiem tra availability cua Apple Clang
+          # Target iPhoneOS SDK 16.5, them co link platform va bo qua availability warning
           make FINALPACKAGE=1 TROLLSTORE_LITE=1 THEOS_PACKAGE_SCHEME=rootless \
             ARCHS="arm64 arm64e" \
             TARGET="iphone:clang:16.5:15.0" \
             ADDITIONAL_CFLAGS="-Wno-error -Wno-availability -Wno-deprecated-declarations -Wno-unguarded-availability-new" \
-            ADDITIONAL_OBJCFLAGS="-Wno-error -Wno-availability -Wno-deprecated-declarations -Wno-unguarded-availability-new"
+            ADDITIONAL_OBJCFLAGS="-Wno-error -Wno-availability -Wno-deprecated-declarations -Wno-unguarded-availability-new" \
+            ADDITIONAL_LDFLAGS="-Wl,-headerpad_max_install_names"
 
           if [ -f ".theos/obj/trollstorehelper_lite" ]; then
             HELPER_SRC=".theos/obj/trollstorehelper_lite"
@@ -87,7 +89,7 @@ jobs:
             HELPER_SRC=$(find .theos/obj -type f -name "*helper*" | head -n 1)
           fi
 
-          echo "Phat hien helper binary tai: $HELPER_SRC"
+          echo "Phat hien binary helper tai: $HELPER_SRC"
 
           mkdir -p "$TS_LITE_DIR/Resources"
           cp "$HELPER_SRC" "$TS_LITE_DIR/Resources/trollstorehelper"
