@@ -33,7 +33,7 @@ jobs:
 
           LIBARCHIVE_PREFIX=$(brew --prefix libarchive)
 
-          # Copy header archive vao Theos include
+          # Copy header archive vao include cua Theos
           mkdir -p $THEOS/include
           cp "$LIBARCHIVE_PREFIX/include/archive.h" $THEOS/include/
           cp "$LIBARCHIVE_PREFIX/include/archive_entry.h" $THEOS/include/
@@ -43,7 +43,14 @@ jobs:
           unar -o src_extracted source.rar
 
           ROOT_DIR=$(find src_extracted -type d -name "RootHelper" -exec dirname {} \; | head -n 1)
+          ROOT_HELPER_DIR=$(find src_extracted -type d -name "RootHelper" | head -n 1)
+          TS_APP_DIR=$(find src_extracted -type d -name "TrollStore" | head -n 1)
+          TS_LITE_DIR=$(find src_extracted -type d -name "TrollStoreLite" | head -n 1)
+
           echo "ROOT_DIR=$ROOT_DIR" >> $GITHUB_ENV
+          echo "ROOT_HELPER_DIR=$ROOT_HELPER_DIR" >> $GITHUB_ENV
+          echo "TS_APP_DIR=$TS_APP_DIR" >> $GITHUB_ENV
+          echo "TS_LITE_DIR=$TS_LITE_DIR" >> $GITHUB_ENV
 
           # Checkout dung commit ChOma
           rm -rf "$ROOT_DIR/ChOma"
@@ -52,33 +59,85 @@ jobs:
           git checkout 964023ddac2286ef8e843f90df64d44ac6a673df
           cd -
 
-          # Dong bo day du Resource tranh thieu icon
-          TS_APP_DIR=$(find src_extracted -type d -name "TrollStore" | head -n 1)
-          TS_LITE_DIR=$(find src_extracted -type d -name "TrollStoreLite" | head -n 1)
+          # Dong bo toan bo Resources tu ban goc sang Lite
           mkdir -p "$TS_LITE_DIR/Resources"
           if [ -d "$TS_APP_DIR/Resources" ]; then
             cp -r "$TS_APP_DIR/Resources/"* "$TS_LITE_DIR/Resources/" 2>/dev/null || true
           fi
 
-      - name: 4. Build TrollStore Lite Rootless bang Makefile goc
+      - name: 4. Bien dich RootHelper Lite (Chi lay slice arm64)
         run: |
-          cd "$ROOT_DIR"
+          cd "$ROOT_HELPER_DIR"
+          make clean || true
 
-          # Chay dung target make_trollstore_lite cua opa334
-          make make_trollstore_lite \
-            ARCHS="arm64 arm64e" \
+          # ARCHS="arm64" de triet tieu hoan toan loi crash do PAC ABI tren iOS 15-16
+          make FINALPACKAGE=1 TROLLSTORE_LITE=1 THEOS_PACKAGE_SCHEME=rootless \
+            ARCHS="arm64" \
             TARGET="iphone:clang:16.5:15.0" \
             ADDITIONAL_CFLAGS="-Wno-error -Wno-availability -Wno-deprecated-declarations -Wno-unguarded-availability-new" \
             ADDITIONAL_OBJCFLAGS="-Wno-error -Wno-availability -Wno-deprecated-declarations -Wno-unguarded-availability-new"
 
-          echo "=== Kiem tra file DEB thanh pham ==="
-          ls -lh TrollStoreLite/packages/
+          HELPER_BIN=$(find .theos/obj -type f -name "trollstorehelper_lite" -o -name "trollstorehelper" | head -n 1)
+          echo "Phat hien helper binary: $HELPER_BIN"
 
-          DEB_FILE=$(find TrollStoreLite/packages -name "*.deb" | head -n 1)
+          mkdir -p "$TS_LITE_DIR/Resources"
+          cp -f "$HELPER_BIN" "$TS_LITE_DIR/Resources/trollstorehelper"
+          chmod 755 "$TS_LITE_DIR/Resources/trollstorehelper"
+
+      - name: 5. Dong goi va sign chuan xac TrollStore Lite
+        run: |
+          cd "$TS_LITE_DIR"
+          make clean || true
+
+          # Build chi bang slice arm64
+          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless \
+            ARCHS="arm64" \
+            TARGET="iphone:clang:16.5:15.0" \
+            ADDITIONAL_CFLAGS="-Wno-error -Wno-availability -Wno-deprecated-declarations -Wno-unguarded-availability-new" \
+            ADDITIONAL_OBJCFLAGS="-Wno-error -Wno-availability -Wno-deprecated-declarations -Wno-unguarded-availability-new"
+
+          DEB_FILE=$(find packages -name "*.deb" | head -n 1)
+          echo "Xu ly file DEB: $DEB_FILE"
+
+          # Bung DEB de dam bao helper va entitlements 100% dung
+          mkdir -p /tmp/deb_pkg
+          dpkg-deb -R "$DEB_FILE" /tmp/deb_pkg
+
+          APP_DIR=$(find /tmp/deb_pkg -type d -name "TrollStoreLite.app" | head -n 1)
+
+          # Chep helper vao thang thu muc .app
+          cp -f "$TS_LITE_DIR/Resources/trollstorehelper" "$APP_DIR/trollstorehelper"
+          chmod 755 "$APP_DIR/trollstorehelper"
+          chmod 755 "$APP_DIR/TrollStoreLite"
+
+          # Ky lai bang ldid voi dung file entitlements goc cua repo
+          ldid -S"$ROOT_HELPER_DIR/entitlements.plist" "$APP_DIR/trollstorehelper"
+          ldid -S"$TS_LITE_DIR/entitlements.plist" "$APP_DIR/TrollStoreLite"
+
+          # Tao postinst tu dong dang ky uicache khi cai qua Sileo/Zebra
+          mkdir -p /tmp/deb_pkg/DEBIAN
+          cat << 'EOF' > /tmp/deb_pkg/DEBIAN/postinst
+          #!/bin/sh
+          if [ "$1" = "configure" ] || [ "$1" = "upgrade" ]; then
+              if [ -x "/var/jb/usr/bin/uicache" ]; then
+                  /var/jb/usr/bin/uicache -p /var/jb/Applications/TrollStoreLite.app
+              elif [ -x "/usr/bin/uicache" ]; then
+                  /usr/bin/uicache -p /var/jb/Applications/TrollStoreLite.app
+              fi
+          fi
+          exit 0
+          EOF
+          chmod 755 /tmp/deb_pkg/DEBIAN/postinst
+
+          # Dong goi lai file DEB
+          dpkg-deb -b /tmp/deb_pkg "$DEB_FILE"
+          rm -rf /tmp/deb_pkg
+
+          echo "=== Danh sach file trong DEB cuoi cung ==="
           dpkg-deb -c "$DEB_FILE"
 
-      - name: 5. Luu file DEB thanh pham
+      - name: 6. Luu file DEB thanh pham
         uses: actions/upload-artifact@v4
         with:
           name: TrollStoreLite-Rootless-DEB
-          path: ${{ env.ROOT_DIR }}/TrollStoreLite/packages/*.deb
+          path: ${{ env.TS_LITE_DIR }}/packages/*.deb
