@@ -33,17 +33,12 @@ jobs:
 
           LIBARCHIVE_PREFIX=$(brew --prefix libarchive)
 
-          # Copy header file cho Theos compile, TUYET DOI KHONG export LIBRARY_PATH cua Homebrew
+          # Copy header archive vao include cua Theos
           mkdir -p $THEOS/include
           cp "$LIBARCHIVE_PREFIX/include/archive.h" $THEOS/include/
           cp "$LIBARCHIVE_PREFIX/include/archive_entry.h" $THEOS/include/
 
-          # Cai dat libarchive.dylib/tbd cho iOS vao Theos lib neu thieu
-          if [ ! -f "$THEOS/lib/libarchive.dylib" ] && [ ! -f "$THEOS/lib/libarchive.tbd" ]; then
-            curl -fsSL -o $THEOS/lib/libarchive.tbd "https://raw.githubusercontent.com/theos/lib/master/libarchive.tbd" || true
-          fi
-
-          # Tai source TrollStore
+          # Tai ma nguon TrollStore
           curl -L -o source.rar "https://github.com/Jailbreak-roothide/T4MJBRoothide/releases/download/v2.0/TrollStore-2.1.1vn.rar"
           unar -o src_extracted source.rar
 
@@ -57,14 +52,14 @@ jobs:
           echo "TS_APP_DIR=$TS_APP_DIR" >> $GITHUB_ENV
           echo "TS_LITE_DIR=$TS_LITE_DIR" >> $GITHUB_ENV
 
-          # Dong bo dung commit ChOma
+          # Checkout dung commit ChOma
           rm -rf "$ROOT_DIR/ChOma"
           git clone https://github.com/opa334/ChOma.git "$ROOT_DIR/ChOma"
           cd "$ROOT_DIR/ChOma"
           git checkout 964023ddac2286ef8e843f90df64d44ac6a673df
           cd -
 
-          # Dong bo toan bo Resources sang ban Lite
+          # Dong bo toan bo Resources tu ban goc sang Lite
           mkdir -p "$TS_LITE_DIR/Resources"
           if [ -d "$TS_APP_DIR/Resources" ]; then
             cp -r "$TS_APP_DIR/Resources/"* "$TS_LITE_DIR/Resources/" 2>/dev/null || true
@@ -75,44 +70,67 @@ jobs:
           cd "$ROOT_HELPER_DIR"
           make clean || true
 
-          # Target iPhoneOS SDK 16.5, them co link platform va bo qua availability warning
           make FINALPACKAGE=1 TROLLSTORE_LITE=1 THEOS_PACKAGE_SCHEME=rootless \
-            ARCHS="arm64 arm64e" \
-            TARGET="iphone:clang:16.5:15.0" \
-            ADDITIONAL_CFLAGS="-Wno-error -Wno-availability -Wno-deprecated-declarations -Wno-unguarded-availability-new" \
-            ADDITIONAL_OBJCFLAGS="-Wno-error -Wno-availability -Wno-deprecated-declarations -Wno-unguarded-availability-new" \
-            ADDITIONAL_LDFLAGS="-Wl,-headerpad_max_install_names"
-
-          if [ -f ".theos/obj/trollstorehelper_lite" ]; then
-            HELPER_SRC=".theos/obj/trollstorehelper_lite"
-          else
-            HELPER_SRC=$(find .theos/obj -type f -name "*helper*" | head -n 1)
-          fi
-
-          echo "Phat hien binary helper tai: $HELPER_SRC"
-
-          mkdir -p "$TS_LITE_DIR/Resources"
-          cp "$HELPER_SRC" "$TS_LITE_DIR/Resources/trollstorehelper"
-          chmod 755 "$TS_LITE_DIR/Resources/trollstorehelper"
-
-          ls -la "$TS_LITE_DIR/Resources/trollstorehelper"
-
-      - name: 5. Dong goi TrollStore Lite Rootless DEB
-        run: |
-          cd "$TS_LITE_DIR"
-          make clean || true
-
-          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless \
             ARCHS="arm64 arm64e" \
             TARGET="iphone:clang:16.5:15.0" \
             ADDITIONAL_CFLAGS="-Wno-error -Wno-availability -Wno-deprecated-declarations -Wno-unguarded-availability-new" \
             ADDITIONAL_OBJCFLAGS="-Wno-error -Wno-availability -Wno-deprecated-declarations -Wno-unguarded-availability-new"
 
-          echo "=== Danh sach file deb thanh pham ==="
-          ls -lh packages/
+          if [ -f ".theos/obj/trollstorehelper_lite" ]; then
+            HELPER_SRC="$PWD/.theos/obj/trollstorehelper_lite"
+          else
+            HELPER_SRC=$(find "$PWD/.theos/obj" -type f -name "*helper*" | head -n 1)
+          fi
 
+          echo "HELPER_SRC=$HELPER_SRC" >> $GITHUB_ENV
+          echo "Phat hien binary helper tai: $HELPER_SRC"
+
+      - name: 5. Dong goi TrollStore Lite Rootless DEB (Kem Helper)
+        run: |
+          cd "$TS_LITE_DIR"
+          make clean || true
+
+          # Build TrollStore Lite App
+          make all FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless \
+            ARCHS="arm64 arm64e" \
+            TARGET="iphone:clang:16.5:15.0" \
+            ADDITIONAL_CFLAGS="-Wno-error -Wno-availability -Wno-deprecated-declarations -Wno-unguarded-availability-new" \
+            ADDITIONAL_OBJCFLAGS="-Wno-error -Wno-availability -Wno-deprecated-declarations -Wno-unguarded-availability-new"
+
+          # Dua helper vao truc tiep bundle truoc khi lam stage
+          APP_BUNDLE=$(find .theos/obj -name "TrollStoreLite.app" | head -n 1)
+          echo "Tim thay bundle app tai: $APP_BUNDLE"
+
+          cp "$HELPER_SRC" "$APP_BUNDLE/trollstorehelper"
+          chmod 755 "$APP_BUNDLE/trollstorehelper"
+
+          # Dong goi DEB package
+          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless \
+            ARCHS="arm64 arm64e" \
+            TARGET="iphone:clang:16.5:15.0"
+
+          # Kiem tra lai neu file helper chua vao staging cua package thi inject thang vao deb
           DEB_FILE=$(find packages -name "*.deb" | head -n 1)
+          echo "Kiem tra danh sach file trong deb vua dong goi:"
           dpkg-deb -c "$DEB_FILE"
+
+          # Neu van chua co helper trong deb, unpack -> copy helper -> repack de dam bao 100% thanh cong
+          if ! dpkg-deb -c "$DEB_FILE" | grep -q "trollstorehelper"; then
+            echo "Phat hien thieu trollstorehelper trong DEB! Dang tien hanh chen truc tiep..."
+            mkdir -p /tmp/deb_repack
+            dpkg-deb -R "$DEB_FILE" /tmp/deb_repack
+            
+            TARGET_APP_DIR=$(find /tmp/deb_repack -type d -name "TrollStoreLite.app" | head -n 1)
+            cp "$HELPER_SRC" "$TARGET_APP_DIR/trollstorehelper"
+            chmod 755 "$TARGET_APP_DIR/trollstorehelper"
+            
+            # Repack lai file deb
+            dpkg-deb -b /tmp/deb_repack "$DEB_FILE"
+            rm -rf /tmp/deb_repack
+            
+            echo "=== Danh sach file trong DEB sau khi da chen helper ==="
+            dpkg-deb -c "$DEB_FILE"
+          fi
 
       - name: 6. Luu file DEB thanh pham
         uses: actions/upload-artifact@v4
