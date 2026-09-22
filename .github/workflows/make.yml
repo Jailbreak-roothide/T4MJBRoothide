@@ -85,52 +85,93 @@ jobs:
           echo "HELPER_SRC=$HELPER_SRC" >> $GITHUB_ENV
           echo "Phat hien binary helper tai: $HELPER_SRC"
 
-      - name: 5. Dong goi TrollStore Lite Rootless DEB (Kem Helper)
+      - name: 5. Dong goi va Fix Entitlements chong vang app
         run: |
           cd "$TS_LITE_DIR"
           make clean || true
 
           # Build TrollStore Lite App
-          make all FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless \
+          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless \
             ARCHS="arm64 arm64e" \
             TARGET="iphone:clang:16.5:15.0" \
             ADDITIONAL_CFLAGS="-Wno-error -Wno-availability -Wno-deprecated-declarations -Wno-unguarded-availability-new" \
             ADDITIONAL_OBJCFLAGS="-Wno-error -Wno-availability -Wno-deprecated-declarations -Wno-unguarded-availability-new"
 
-          # Dua helper vao truc tiep bundle truoc khi lam stage
-          APP_BUNDLE=$(find .theos/obj -name "TrollStoreLite.app" | head -n 1)
-          echo "Tim thay bundle app tai: $APP_BUNDLE"
-
-          cp "$HELPER_SRC" "$APP_BUNDLE/trollstorehelper"
-          chmod 755 "$APP_BUNDLE/trollstorehelper"
-
-          # Dong goi DEB package
-          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless \
-            ARCHS="arm64 arm64e" \
-            TARGET="iphone:clang:16.5:15.0"
-
-          # Kiem tra lai neu file helper chua vao staging cua package thi inject thang vao deb
           DEB_FILE=$(find packages -name "*.deb" | head -n 1)
-          echo "Kiem tra danh sach file trong deb vua dong goi:"
-          dpkg-deb -c "$DEB_FILE"
 
-          # Neu van chua co helper trong deb, unpack -> copy helper -> repack de dam bao 100% thanh cong
-          if ! dpkg-deb -c "$DEB_FILE" | grep -q "trollstorehelper"; then
-            echo "Phat hien thieu trollstorehelper trong DEB! Dang tien hanh chen truc tiep..."
-            mkdir -p /tmp/deb_repack
-            dpkg-deb -R "$DEB_FILE" /tmp/deb_repack
-            
-            TARGET_APP_DIR=$(find /tmp/deb_repack -type d -name "TrollStoreLite.app" | head -n 1)
-            cp "$HELPER_SRC" "$TARGET_APP_DIR/trollstorehelper"
-            chmod 755 "$TARGET_APP_DIR/trollstorehelper"
-            
-            # Repack lai file deb
-            dpkg-deb -b /tmp/deb_repack "$DEB_FILE"
-            rm -rf /tmp/deb_repack
-            
-            echo "=== Danh sach file trong DEB sau khi da chen helper ==="
-            dpkg-deb -c "$DEB_FILE"
+          echo "=== Tien hanh bung DEB de fix triet de loi vang ==="
+          mkdir -p /tmp/deb_work
+          dpkg-deb -R "$DEB_FILE" /tmp/deb_work
+
+          TARGET_APP_DIR=$(find /tmp/deb_work -type d -name "TrollStoreLite.app" | head -n 1)
+
+          # 1. Chep file helper vao bundle
+          cp "$HELPER_SRC" "$TARGET_APP_DIR/trollstorehelper"
+          chmod 755 "$TARGET_APP_DIR/trollstorehelper"
+          chmod 755 "$TARGET_APP_DIR/TrollStoreLite"
+
+          # 2. Tao file entitlements rootless chuan xac (tranh bi AMFI SIGKILL)
+          cat << 'EOF' > /tmp/app_entitlements.plist
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>platform-application</key>
+              <true/>
+              <key>com.apple.private.security.no-sandbox</key>
+              <true/>
+              <key>com.apple.private.security.no-container</key>
+              <true/>
+              <key>com.apple.private.security.storage.AppDataContainers</key>
+              <true/>
+              <key>com.apple.security.exception.files.absolute-path.read-write</key>
+              <array>
+                  <string>/</string>
+              </array>
+              <key>com.apple.private.skip-library-validation</key>
+              <true/>
+          </dict>
+          </plist>
+          EOF
+
+          # 3. Ky lai bang ldid kem platform entitlements
+          ldid -S/tmp/app_entitlements.plist "$TARGET_APP_DIR/TrollStoreLite"
+          ldid -S"$ROOT_HELPER_DIR/entitlements.plist" "$TARGET_APP_DIR/trollstorehelper"
+
+          # 4. Them control postinst va postrm de tu dong reload uicache khi cai
+          mkdir -p /tmp/deb_work/DEBIAN
+          cat << 'EOF' > /tmp/deb_work/DEBIAN/postinst
+          #!/bin/sh
+          if [ "$1" = "configure" ] || [ "$1" = "upgrade" ]; then
+              if [ -x "/var/jb/usr/bin/uicache" ]; then
+                  /var/jb/usr/bin/uicache -p /var/jb/Applications/TrollStoreLite.app
+              elif [ -x "/usr/bin/uicache" ]; then
+                  /usr/bin/uicache -p /var/jb/Applications/TrollStoreLite.app
+              fi
           fi
+          exit 0
+          EOF
+          chmod 755 /tmp/deb_work/DEBIAN/postinst
+
+          cat << 'EOF' > /tmp/deb_work/DEBIAN/postrm
+          #!/bin/sh
+          if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
+              if [ -x "/var/jb/usr/bin/uicache" ]; then
+                  /var/jb/usr/bin/uicache -u /var/jb/Applications/TrollStoreLite.app
+              elif [ -x "/usr/bin/uicache" ]; then
+                  /usr/bin/uicache -u /var/jb/Applications/TrollStoreLite.app
+              fi
+          fi
+          exit 0
+          EOF
+          chmod 755 /tmp/deb_work/DEBIAN/postrm
+
+          # 5. Dong goi lai DEB hoan chinh
+          dpkg-deb -b /tmp/deb_work "$DEB_FILE"
+          rm -rf /tmp/deb_work /tmp/app_entitlements.plist
+
+          echo "=== Danh sach file trong DEB thanh pham ==="
+          dpkg-deb -c "$DEB_FILE"
 
       - name: 6. Luu file DEB thanh pham
         uses: actions/upload-artifact@v4
