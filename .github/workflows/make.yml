@@ -42,10 +42,11 @@ jobs:
           curl -L -o source.rar "https://github.com/Jailbreak-roothide/T4MJBRoothide/releases/download/v2.0/TrollStore-2.1.1vn.rar"
           unar -o src_extracted source.rar
 
-          ROOT_DIR=$(find src_extracted -type d -name "RootHelper" -exec dirname {} \; | head -n 1)
-          ROOT_HELPER_DIR=$(find src_extracted -type d -name "RootHelper" | head -n 1)
-          TS_APP_DIR=$(find src_extracted -type d -name "TrollStore" | head -n 1)
-          TS_LITE_DIR=$(find src_extracted -type d -name "TrollStoreLite" | head -n 1)
+          # Thiet lap DUONG DAN TUYET DOI de khong bao gio bi lac khi cd
+          ROOT_DIR=$(find "$GITHUB_WORKSPACE/src_extracted" -type d -name "RootHelper" -exec dirname {} \; | head -n 1)
+          ROOT_HELPER_DIR="$ROOT_DIR/RootHelper"
+          TS_APP_DIR="$ROOT_DIR/TrollStore"
+          TS_LITE_DIR="$ROOT_DIR/TrollStoreLite"
 
           echo "ROOT_DIR=$ROOT_DIR" >> $GITHUB_ENV
           echo "ROOT_HELPER_DIR=$ROOT_HELPER_DIR" >> $GITHUB_ENV
@@ -57,7 +58,7 @@ jobs:
           git clone https://github.com/opa334/ChOma.git "$ROOT_DIR/ChOma"
           cd "$ROOT_DIR/ChOma"
           git checkout 964023ddac2286ef8e843f90df64d44ac6a673df
-          cd -
+          cd "$GITHUB_WORKSPACE"
 
           # Dong bo toan bo Resources tu ban goc sang Lite
           mkdir -p "$TS_LITE_DIR/Resources"
@@ -70,16 +71,19 @@ jobs:
           cd "$ROOT_HELPER_DIR"
           make clean || true
 
-          # ARCHS="arm64" de triet tieu hoan toan loi crash do PAC ABI tren iOS 15-16
+          # ARCHS="arm64" de triet tieu xung dot PAC ABI tren iOS 15-16
           make FINALPACKAGE=1 TROLLSTORE_LITE=1 THEOS_PACKAGE_SCHEME=rootless \
             ARCHS="arm64" \
             TARGET="iphone:clang:16.5:15.0" \
             ADDITIONAL_CFLAGS="-Wno-error -Wno-availability -Wno-deprecated-declarations -Wno-unguarded-availability-new" \
             ADDITIONAL_OBJCFLAGS="-Wno-error -Wno-availability -Wno-deprecated-declarations -Wno-unguarded-availability-new"
 
-          HELPER_BIN=$(find .theos/obj -type f -name "trollstorehelper_lite" -o -name "trollstorehelper" | head -n 1)
-          echo "Phat hien helper binary: $HELPER_BIN"
+          # Lay duong dan tuyet doi cua helper binary
+          HELPER_BIN=$(find "$ROOT_HELPER_DIR/.theos/obj" -type f -name "trollstorehelper_lite" -o -name "trollstorehelper" | head -n 1)
+          echo "HELPER_BIN=$HELPER_BIN" >> $GITHUB_ENV
+          echo "Phat hien helper binary tai: $HELPER_BIN"
 
+          # Dat helper vao Resources cua Lite phong ho truoc
           mkdir -p "$TS_LITE_DIR/Resources"
           cp -f "$HELPER_BIN" "$TS_LITE_DIR/Resources/trollstorehelper"
           chmod 755 "$TS_LITE_DIR/Resources/trollstorehelper"
@@ -89,32 +93,61 @@ jobs:
           cd "$TS_LITE_DIR"
           make clean || true
 
-          # Build chi bang slice arm64
+          # Chep lai helper vao Resources truoc khi make phong khi make clean da xoa
+          mkdir -p "$TS_LITE_DIR/Resources"
+          cp -f "$HELPER_BIN" "$TS_LITE_DIR/Resources/trollstorehelper"
+          chmod 755 "$TS_LITE_DIR/Resources/trollstorehelper"
+
+          # Build package TrollStore Lite
           make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless \
             ARCHS="arm64" \
             TARGET="iphone:clang:16.5:15.0" \
             ADDITIONAL_CFLAGS="-Wno-error -Wno-availability -Wno-deprecated-declarations -Wno-unguarded-availability-new" \
             ADDITIONAL_OBJCFLAGS="-Wno-error -Wno-availability -Wno-deprecated-declarations -Wno-unguarded-availability-new"
 
-          DEB_FILE=$(find packages -name "*.deb" | head -n 1)
+          DEB_FILE=$(find "$TS_LITE_DIR/packages" -name "*.deb" | head -n 1)
           echo "Xu ly file DEB: $DEB_FILE"
 
-          # Bung DEB de dam bao helper va entitlements 100% dung
+          # Bung DEB de dam bao helper va entitlements 100% dung vi tri
           mkdir -p /tmp/deb_pkg
           dpkg-deb -R "$DEB_FILE" /tmp/deb_pkg
 
           APP_DIR=$(find /tmp/deb_pkg -type d -name "TrollStoreLite.app" | head -n 1)
 
-          # Chep helper vao thang thu muc .app
-          cp -f "$TS_LITE_DIR/Resources/trollstorehelper" "$APP_DIR/trollstorehelper"
+          # Chep truc tiep file helper vao bundle app
+          cp -f "$HELPER_BIN" "$APP_DIR/trollstorehelper"
           chmod 755 "$APP_DIR/trollstorehelper"
           chmod 755 "$APP_DIR/TrollStoreLite"
 
-          # Ky lai bang ldid voi dung file entitlements goc cua repo
-          ldid -S"$ROOT_HELPER_DIR/entitlements.plist" "$APP_DIR/trollstorehelper"
-          ldid -S"$TS_LITE_DIR/entitlements.plist" "$APP_DIR/TrollStoreLite"
+          # Tao entitlements khong bi sandbox kill cho app va helper
+          cat << 'EOF' > /tmp/lite_entitlements.plist
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>platform-application</key>
+              <true/>
+              <key>com.apple.private.security.no-sandbox</key>
+              <true/>
+              <key>com.apple.private.security.no-container</key>
+              <true/>
+              <key>com.apple.private.security.storage.AppDataContainers</key>
+              <true/>
+              <key>com.apple.security.exception.files.absolute-path.read-write</key>
+              <array>
+                  <string>/</string>
+              </array>
+              <key>com.apple.private.skip-library-validation</key>
+              <true/>
+          </dict>
+          </plist>
+          EOF
 
-          # Tao postinst tu dong dang ky uicache khi cai qua Sileo/Zebra
+          # Ky lai bang ldid voi day du quyen rootless unsandboxed
+          ldid -S/tmp/lite_entitlements.plist "$APP_DIR/TrollStoreLite"
+          ldid -S"$ROOT_HELPER_DIR/entitlements.plist" "$APP_DIR/trollstorehelper"
+
+          # Tao postinst tu dong dang ky uicache
           mkdir -p /tmp/deb_pkg/DEBIAN
           cat << 'EOF' > /tmp/deb_pkg/DEBIAN/postinst
           #!/bin/sh
@@ -129,11 +162,11 @@ jobs:
           EOF
           chmod 755 /tmp/deb_pkg/DEBIAN/postinst
 
-          # Dong goi lai file DEB
+          # Dong goi lai file DEB hoan chinh
           dpkg-deb -b /tmp/deb_pkg "$DEB_FILE"
-          rm -rf /tmp/deb_pkg
+          rm -rf /tmp/deb_pkg /tmp/lite_entitlements.plist
 
-          echo "=== Danh sach file trong DEB cuoi cung ==="
+          echo "=== Danh sach file trong DEB thanh pham ==="
           dpkg-deb -c "$DEB_FILE"
 
       - name: 6. Luu file DEB thanh pham
