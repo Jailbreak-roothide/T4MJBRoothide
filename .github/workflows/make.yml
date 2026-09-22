@@ -51,7 +51,7 @@ jobs:
           echo "TS_APP_DIR=$TS_APP_DIR" >> $GITHUB_ENV
           echo "TS_LITE_DIR=$TS_LITE_DIR" >> $GITHUB_ENV
 
-          # Checkout commit ChOma tuong thich 2.1.1
+          # Checkout commit ChOma
           rm -rf "$ROOT_DIR/ChOma"
           git clone https://github.com/opa334/ChOma.git "$ROOT_DIR/ChOma"
           cd "$ROOT_DIR/ChOma"
@@ -63,7 +63,7 @@ jobs:
           cp "$LIBARCHIVE_PREFIX/include/archive.h" $THEOS/include/
           cp "$LIBARCHIVE_PREFIX/include/archive_entry.h" $THEOS/include/
 
-          # Sao chep toan bo Resources tu ban goc sang Lite de chong thieu asset
+          # Sao chep toan bo Resources tu ban goc sang Lite
           mkdir -p "$TS_LITE_DIR/Resources"
           if [ -d "$TS_APP_DIR/Resources" ]; then
             cp -r "$TS_APP_DIR/Resources/"* "$TS_LITE_DIR/Resources/" 2>/dev/null || true
@@ -74,10 +74,12 @@ jobs:
           cd "$ROOT_HELPER_DIR"
           make clean || true
 
-          # Build truc tiep target rootless kem strip debug va add entitlements
+          # Tro truc tiep vao SDK 16.5 va bo qua kiem tra availability cua Apple Clang
           make FINALPACKAGE=1 TROLLSTORE_LITE=1 THEOS_PACKAGE_SCHEME=rootless \
-            ARCHS="arm64 arm64e" TARGET="iphone:clang:latest:15.0" \
-            ADDITIONAL_CFLAGS="-Wno-error" ADDITIONAL_OBJCFLAGS="-Wno-error"
+            ARCHS="arm64 arm64e" \
+            TARGET="iphone:clang:16.5:15.0" \
+            ADDITIONAL_CFLAGS="-Wno-error -Wno-availability -Wno-deprecated-declarations -Wno-unguarded-availability-new" \
+            ADDITIONAL_OBJCFLAGS="-Wno-error -Wno-availability -Wno-deprecated-declarations -Wno-unguarded-availability-new"
 
           if [ -f ".theos/obj/trollstorehelper_lite" ]; then
             HELPER_SRC=".theos/obj/trollstorehelper_lite"
@@ -87,7 +89,6 @@ jobs:
 
           echo "Phat hien helper binary tai: $HELPER_SRC"
 
-          # Dat helper vao Resources cua Lite va cap quyen thuc thi 755
           mkdir -p "$TS_LITE_DIR/Resources"
           cp "$HELPER_SRC" "$TS_LITE_DIR/Resources/trollstorehelper"
           chmod 755 "$TS_LITE_DIR/Resources/trollstorehelper"
@@ -100,13 +101,14 @@ jobs:
           make clean || true
 
           make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless \
-            ARCHS="arm64 arm64e" TARGET="iphone:clang:latest:15.0" \
-            ADDITIONAL_CFLAGS="-Wno-error" ADDITIONAL_OBJCFLAGS="-Wno-error"
+            ARCHS="arm64 arm64e" \
+            TARGET="iphone:clang:16.5:15.0" \
+            ADDITIONAL_CFLAGS="-Wno-error -Wno-availability -Wno-deprecated-declarations -Wno-unguarded-availability-new" \
+            ADDITIONAL_OBJCFLAGS="-Wno-error -Wno-availability -Wno-deprecated-declarations -Wno-unguarded-availability-new"
 
           echo "=== Danh sach file deb thanh pham ==="
           ls -lh packages/
 
-          # Kiem tra cau truc thu muc ben trong deb dam bao dung chuan /var/jb
           DEB_FILE=$(find packages -name "*.deb" | head -n 1)
           dpkg-deb -c "$DEB_FILE"
 
